@@ -6,13 +6,34 @@ One master password unlocks an encrypted vault of servers; a single click opens 
 tab; and with **auto-sudo** you land in a root shell without ever typing `sudo` or its password
 again.
 
-```
+| Unlock | Servers |
+| :---: | :---: |
+| ![Unlock screen](docs/screenshots/unlock-screen.png) | ![Servers view](docs/screenshots/servers-view.png) |
+
+## Getting started
+
+**Requirements:** Windows 10/11 x64, Node.js 22+ (to build from source).
+
+Download a prebuilt release (`SSH Vault-x.x.x-setup.exe` installer or the portable exe) from
+[Releases](https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases), or build it
+yourself:
+
+```bash
+git clone https://github.com/mohammadhosseinjafaripour/SSH-Manager.git
+cd SSH-Manager
 npm install
 npm run dev        # development (Electron + hot reload)
 npm run verify     # typecheck + unit tests + lint + audit
 npm run package    # NSIS installer + portable exe (release/)
-npx vite --config vite.devui.config.ts   # renderer-only dev server (browser, mock bridge)
 ```
+
+There is also a browser-only development mode with a mock SSH backend — handy for working on
+the UI without touching real servers:
+
+```bash
+npm run dev:ui     # serves the renderer at http://localhost:5188
+```
+
 
 ## Features (MVP)
 
