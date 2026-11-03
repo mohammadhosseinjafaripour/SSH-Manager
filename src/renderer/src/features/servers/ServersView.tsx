@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
+import { ArrowUpFromLine, Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
 import type { ServerView } from '@shared/types'
 import { Button, IconButton, StatusDot, Tag } from '../../components/ui'
 import { relativeTime } from '../../lib/format'
@@ -182,10 +182,16 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           click, every time.
         </p>
       </div>
-      <Button onClick={onAdd}>
-        <Plus size={15} />
-        Add server
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button onClick={onAdd}>
+          <Plus size={15} />
+          Add server
+        </Button>
+        <Button variant="secondary" onClick={() => useUi.getState().openTransfer('import')}>
+          <ArrowUpFromLine size={15} />
+          Import from file
+        </Button>
+      </div>
     </div>
   )
 }

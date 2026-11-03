@@ -54,6 +54,32 @@ npm run dev:ui     # serves the renderer at http://localhost:5188
 - **Keyboard-interactive auth** — hidden `Password:` prompts are auto-answered; OTP/2FA
   challenges appear in a dialog honoring each prompt's echo flag.
 - Dark/light/system themes, durable vault writes with two backup generations.
+- **Batch import / export** — move every server to a new machine in two clicks
+  (see below).
+
+## Moving to a new machine (import / export)
+
+Settings → **Move your servers**:
+
+- **Encrypted export** creates a `.sshvault` file containing all servers — passwords
+  included — sealed with Argon2id + AES-256-GCM under a password you choose for the
+  file. It is safe to carry on a USB stick or through cloud storage; without the
+  password it is indistinguishable from random bytes. Pinned host keys can ride
+  along too, so the new machine skips first-connect fingerprint prompts.
+- **Import file…** accepts that `.sshvault` file (it asks for the file's password)
+  or a plain CSV. Import runs in one of two modes:
+  - *Merge (recommended)* — adds everything new; servers that already exist
+    (same name + host + port + username) are skipped and reported.
+  - *Replace everything* — wipes the current servers and pins, then loads the
+    file (requires an explicit confirmation).
+- **Export as CSV** writes a plaintext spreadsheet (`name,host,port,username,password,
+  tags,notes,auto_sudo,sudo_command`; tags are `;`-separated inside their cell).
+  Useful for bulk-editing or moving to another tool — and deliberately gated
+  behind an "I understand the risk" checkbox, because the passwords are readable
+  by anyone who opens the file. The same CSV format can be imported back.
+
+Typical migration: on the old machine → *Encrypted export*; on the new machine →
+create a vault, *Import file…*, enter the export password, Merge. Done.
 
 ## Keyboard shortcuts
 

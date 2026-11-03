@@ -26,6 +26,10 @@ const api: Bridge = {
   vaultBackups: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultBackups),
   vaultRestoreBackup: (file, masterPassword) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.vaultRestoreBackup, { file, password: masterPassword }),
+  vaultExportEncrypted: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportEncrypted, input),
+  vaultExportCsv: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportCsv),
+  vaultImportPick: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportPick),
+  vaultImportApply: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportApply, input),
   serversUpsert: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.serversUpsert, input),
   serversDelete: (id) => ipcRenderer.invoke(BRIDGE_CHANNELS.serversDelete, id),
   serversGetSecret: (id) => ipcRenderer.invoke(BRIDGE_CHANNELS.serversGetSecret, id),

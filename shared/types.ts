@@ -162,6 +162,26 @@ export interface TestConnectionResult {
   message: string
 }
 
+export interface ImportSummary {
+  added: number
+  skippedDuplicates: number
+  replaced: boolean
+}
+
+/** Result of a transfer that writes a file: ok=false means the user cancelled the save dialog. */
+export interface FilePickResult {
+  ok: boolean
+  path?: string
+}
+
+export interface ImportPickResult {
+  ok: boolean
+  /** Present when ok — which flow the chosen file needs. */
+  format?: 'encrypted' | 'csv'
+  /** Short display name of the picked file. */
+  fileName?: string
+}
+
 /**
  * The complete typed surface exposed on `window.sshvault` via contextBridge.
  * Deliberately narrow: the renderer can do exactly what the UI needs and
@@ -179,6 +199,16 @@ export interface Bridge {
   vaultActivity(): Promise<void>
   vaultBackups(): Promise<VaultBackupInfo[]>
   vaultRestoreBackup(file: string, masterPassword: string): Promise<void>
+  vaultExportEncrypted(input: {
+    exportPassword: string
+    includePinnedHostKeys: boolean
+  }): Promise<FilePickResult>
+  vaultExportCsv(): Promise<FilePickResult>
+  vaultImportPick(): Promise<ImportPickResult>
+  vaultImportApply(input: {
+    exportPassword?: string
+    mode: 'merge' | 'replace'
+  }): Promise<{ servers: ServerView[]; summary: ImportSummary; warnings?: string[] }>
   serversUpsert(input: ServerUpsertInput): Promise<{ servers: ServerView[]; id: string }>
   serversDelete(id: string): Promise<{ servers: ServerView[] }>
   serversGetSecret(id: string): Promise<{ password: string; elevatePassword: string | null }>
@@ -207,6 +237,10 @@ export const BRIDGE_CHANNELS = {
   vaultActivity: 'vault:activity',
   vaultBackups: 'vault:backups',
   vaultRestoreBackup: 'vault:restore-backup',
+  vaultExportEncrypted: 'vault:export-encrypted',
+  vaultExportCsv: 'vault:export-csv',
+  vaultImportPick: 'vault:import-pick',
+  vaultImportApply: 'vault:import-apply',
   serversUpsert: 'servers:upsert',
   serversDelete: 'servers:delete',
   serversGetSecret: 'servers:get-secret',

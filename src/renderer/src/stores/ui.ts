@@ -17,6 +17,10 @@ export interface KiDialogState {
   prompts: ReadonlyArray<{ prompt: string; echo: boolean }>
 }
 
+export interface TransferState {
+  mode: 'export' | 'import' | 'csv-export'
+}
+
 interface UiState {
   search: string
   activeTag: string | null
@@ -25,6 +29,7 @@ interface UiState {
   deleteTarget: ServerView | null
   settingsOpen: boolean
   vaultToolsOpen: boolean
+  transfer: TransferState | null
   hostkey: HostKeyDialogState | null
   ki: KiDialogState | null
   setSearch: (search: string) => void
@@ -35,6 +40,8 @@ interface UiState {
   closeDelete: () => void
   setSettingsOpen: (open: boolean) => void
   setVaultToolsOpen: (open: boolean) => void
+  openTransfer: (mode: TransferState['mode']) => void
+  closeTransfer: () => void
   openHostKey: (state: HostKeyDialogState) => void
   closeHostKey: () => void
   openKi: (state: KiDialogState) => void
@@ -49,6 +56,7 @@ export const useUi = create<UiState>((set) => ({
   deleteTarget: null,
   settingsOpen: false,
   vaultToolsOpen: false,
+  transfer: null,
   hostkey: null,
   ki: null,
   setSearch: (search) => set({ search }),
@@ -59,6 +67,8 @@ export const useUi = create<UiState>((set) => ({
   closeDelete: () => set({ deleteTarget: null }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setVaultToolsOpen: (vaultToolsOpen) => set({ vaultToolsOpen }),
+  openTransfer: (mode) => set({ transfer: { mode } }),
+  closeTransfer: () => set({ transfer: null }),
   openHostKey: (hostkey) => set({ hostkey }),
   closeHostKey: () => set({ hostkey: null }),
   openKi: (ki) => set({ ki }),

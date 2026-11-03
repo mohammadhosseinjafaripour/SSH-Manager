@@ -12,6 +12,7 @@ import { TerminalView } from './features/terminal/TerminalView'
 import { HostKeyDialog } from './components/HostKeyDialog'
 import { KiDialog } from './components/KiDialog'
 import { SettingsDialog } from './components/SettingsDialog'
+import { TransferDialog } from './components/TransferDialog'
 import { Spinner } from './components/ui'
 
 function isTerminalFocused(): boolean {
@@ -280,6 +281,7 @@ export default function App() {
       <HostKeyDialog />
       <KiDialog />
       <SettingsDialog />
+      <TransferDialog />
     </>
   )
 }

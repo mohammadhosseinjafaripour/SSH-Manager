@@ -108,6 +108,19 @@ function snapshot() {
 type PortListener = (sessionId: string, port: SessionPort) => void
 type LockedListener = () => void
 
+let pendingMockImport: { raw: string; format: 'encrypted' | 'csv' } | null = null
+
+/** Browser stand-in for the native save dialog used by the real app. */
+function triggerBrowserDownload(fileName: string, contents: string): void {
+  const blob = new Blob([contents], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
 class MockPort implements SessionPort {
   private listener: ((msg: MainPortMessage) => void) | null = null
   private echo = true
@@ -263,6 +276,89 @@ export function createMockBridge(): Bridge {
     vaultActivity: async () => undefined,
     vaultBackups: async () => [] as VaultBackupInfo[],
     vaultRestoreBackup: async () => undefined,
+    vaultExportEncrypted: async ({ exportPassword, includePinnedHostKeys }) => {
+      if (exportPassword.length < 10) throw new Error('invalid-input:export password must be at least 10 characters')
+      const doc = JSON.stringify(
+        { app: 'ssh-vault-export', format: 1, exportedAt: new Date().toISOString(), exportPassword, includePinnedHostKeys, servers: state.servers, pinnedHostKeys: state.pinned },
+        null,
+        2
+      )
+      triggerBrowserDownload(`ssh-vault-export-${new Date().toISOString().slice(0, 10)}.sshvault`, doc)
+      return { ok: true, path: '(browser download)' }
+    },
+    vaultExportCsv: async () => {
+      const header = 'name,host,port,username,password,tags,notes,auto_sudo,sudo_command'
+      const rows = state.servers.map((s) =>
+        [s.name, s.host, String(s.port), s.username, s.password, s.tags.join(';'), s.notes ?? '', s.elevate.enabled ? 'yes' : 'no', s.elevate.preset].join(',')
+      )
+      triggerBrowserDownload(`ssh-vault-servers-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows].join('\r\n'))
+      return { ok: true, path: '(browser download)' }
+    },
+    vaultImportPick: () =>
+      new Promise((resolve) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.sshvault,.csv,.json,.txt'
+        input.onchange = async () => {
+          const file = input.files?.[0]
+          if (!file) return resolve({ ok: false })
+          const raw = await file.text()
+          const format: 'encrypted' | 'csv' = raw.trimStart().startsWith('{') && raw.includes('ssh-vault-export') ? 'encrypted' : 'csv'
+          pendingMockImport = { raw, format }
+          resolve({ ok: true, format, fileName: file.name })
+        }
+        input.click()
+      }),
+    vaultImportApply: async ({ exportPassword, mode }) => {
+      if (!pendingMockImport) throw new Error('not-found')
+      const { raw, format } = pendingMockImport
+      let servers: ServerEntry[]
+      if (format === 'encrypted') {
+        const doc = JSON.parse(raw)
+        if (doc.exportPassword !== (exportPassword ?? '')) throw new Error('unlock-failed')
+        servers = doc.servers ?? []
+      } else {
+        const lines = raw.split(/\r?\n/).filter((l) => l.trim())
+        const header = (lines[0] ?? '').toLowerCase()
+        if (!header.includes('name') || !header.includes('host')) {
+          throw new Error('invalid-input:Missing required columns (name, host, username, password)')
+        }
+        servers = lines.slice(1).map((line, i) => {
+          const cells = line.split(',')
+          return {
+            id: randomUUID(),
+            name: cells[0] ?? `server-${i + 1}`,
+            host: cells[1] ?? '0.0.0.0',
+            port: Number(cells[2]) || 22,
+            username: cells[3] ?? 'root',
+            password: cells[4] ?? '',
+            authMethod: 'password' as const,
+            tags: (cells[5] ?? '').split(';').filter(Boolean),
+            notes: cells[6] ?? '',
+            elevate: { enabled: (cells[7] ?? 'no') === 'yes', preset: (cells[8] as never) ?? 'sudo -s', customCommand: '', passwordMode: 'same' as const, customPassword: '' },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            lastConnectedAt: null
+          }
+        })
+      }
+      pendingMockImport = null
+      if (mode === 'replace') {
+        state.servers = servers
+      } else {
+        const key = (s: ServerEntry) => `${s.name}|${s.host}|${s.port}|${s.username}`
+        const existing = new Set(state.servers.map(key))
+        const before = state.servers.length
+        for (const s of servers) if (!existing.has(key(s))) state.servers.push(s)
+        save()
+        return {
+          servers: snapshot().servers,
+          summary: { added: state.servers.length - before, skippedDuplicates: servers.length - (state.servers.length - before), replaced: false }
+        }
+      }
+      save()
+      return { servers: snapshot().servers, summary: { added: servers.length, skippedDuplicates: 0, replaced: true } }
+    },
     serversUpsert: async (input: ServerUpsertInput) => {
       const now = new Date().toISOString()
       if (input.id) {

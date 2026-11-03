@@ -1,4 +1,4 @@
-import { Moon, Settings2, Sun } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, FileSpreadsheet, Moon, Settings2, Sun } from 'lucide-react'
 import type { Theme } from '@shared/types'
 import { Button, Dialog, Field, Input } from './ui'
 import { applyTheme } from '../lib/theme'
@@ -74,6 +74,45 @@ export function SettingsDialog() {
             onBlur={(e) => void saveIdle(e.target.value)}
           />
         </Field>
+
+        <div className="border-t border-line pt-4">
+          <p className="mb-2.5 text-[13px] font-medium text-fg">Move your servers</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSettingsOpen(false)
+                useUi.getState().openTransfer('export')
+              }}
+            >
+              <ArrowDownToLine size={14} />
+              Encrypted export
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSettingsOpen(false)
+                useUi.getState().openTransfer('import')
+              }}
+            >
+              <ArrowUpFromLine size={14} />
+              Import file…
+            </Button>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsOpen(false)
+                useUi.getState().openTransfer('csv-export')
+              }}
+              className="col-span-2 flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12.5px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-warn"
+            >
+              <FileSpreadsheet size={13} />
+              Export as CSV (plaintext passwords)
+            </button>
+          </div>
+        </div>
 
         <div className="flex justify-end">
           <Button variant="secondary" onClick={() => setSettingsOpen(false)}>

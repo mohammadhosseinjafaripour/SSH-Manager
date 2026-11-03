@@ -167,7 +167,8 @@ export function Dialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  title: string
+  /** Optional — when omitted the caller renders its own Title/Description. */
+  title?: string
   description?: string
   children: ReactNode
   width?: string
@@ -179,27 +180,39 @@ export function Dialog({
         <DialogPrimitive.Content
           className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] overflow-y-auto rounded-2xl border border-line bg-panel p-6 shadow-2xl`}
         >
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
-              {description && (
-                <DialogPrimitive.Description className="mt-1 text-[13px] leading-relaxed text-muted">
-                  {description}
-                </DialogPrimitive.Description>
-              )}
+          {title ? (
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
+                {description && (
+                  <DialogPrimitive.Description className="mt-1 text-[13px] leading-relaxed text-muted">
+                    {description}
+                  </DialogPrimitive.Description>
+                )}
+              </div>
+              <DialogPrimitive.Close asChild>
+                <IconButton label="Close dialog">
+                  <X size={16} />
+                </IconButton>
+              </DialogPrimitive.Close>
             </div>
+          ) : (
             <DialogPrimitive.Close asChild>
-              <IconButton label="Close dialog">
+              <IconButton label="Close dialog" className="absolute right-4 top-4">
                 <X size={16} />
               </IconButton>
             </DialogPrimitive.Close>
-          </div>
+          )}
           {children}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   )
 }
+
+// Compound parts for dialogs that render their own rich headers.
+Dialog.Title = DialogPrimitive.Title
+Dialog.Description = DialogPrimitive.Description
 
 export function Switch({
   checked,
