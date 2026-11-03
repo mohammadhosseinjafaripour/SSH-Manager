@@ -77,6 +77,16 @@ export function ServerFormModal() {
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
+    // Create-mode-only secret requirements; in edit mode empty means "keep
+    // the stored value" (enforced by the main process).
+    if (!editing && !values.password) {
+      form.setError('password', { message: 'Password is required for a new server' })
+      return
+    }
+    if (!editing && values.elevate.passwordMode === 'custom' && !values.elevate.customPassword) {
+      form.setError('elevate.customPassword', { message: 'A separate sudo password is required' })
+      return
+    }
     const input: ServerUpsertInput = {
       id: editing?.id,
       name: values.name,

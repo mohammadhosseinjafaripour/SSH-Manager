@@ -51,17 +51,20 @@ describe('serverFormSchema', () => {
     expect(res.success).toBe(false)
   })
 
-  it('requires a separate sudo password when mode is custom', () => {
-    const res = serverFormSchema.safeParse({
-      ...valid,
-      elevate: { ...valid.elevate, enabled: true, passwordMode: 'custom', customPassword: '' }
-    })
-    expect(res.success).toBe(false)
-  })
-
   it('rejects out-of-range ports', () => {
     expect(serverFormSchema.safeParse({ ...valid, port: 0 }).success).toBe(false)
     expect(serverFormSchema.safeParse({ ...valid, port: 70000 }).success).toBe(false)
+  })
+
+  it('allows empty secrets in the schema (edit mode "keep stored value")', () => {
+    const res = serverFormSchema.safeParse({
+      ...valid,
+      password: '',
+      elevate: { ...valid.elevate, enabled: true, passwordMode: 'custom', customPassword: '' }
+    })
+    // The "custom sudo password required" rule is enforced at submit time for
+    // NEW servers only; schema stays permissive for edit mode.
+    expect(res.success).toBe(true)
   })
 })
 

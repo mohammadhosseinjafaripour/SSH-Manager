@@ -29,13 +29,6 @@ const elevateSchema = z
         })
       }
     }
-    if (cfg.passwordMode === 'custom' && !cfg.customPassword) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['customPassword'],
-        message: 'A separate sudo password is required'
-      })
-    }
   })
 
 /**
