@@ -7,3 +7,5 @@ dist/
 .vite/
 .zcode/
 *.tsbuildinfo
+package-output.txt
+release/
