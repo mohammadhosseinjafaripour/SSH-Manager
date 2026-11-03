@@ -26,6 +26,4 @@ nsis:
   artifactName: ${productName}-${version}-setup.${ext}
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
-electronDownload:
-  cache: node_modules/.electron-cache
 afterPack: ./scripts/fuses.cjs
