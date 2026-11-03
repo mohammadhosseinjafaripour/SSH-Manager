@@ -1,0 +1,191 @@
+import { useMemo } from 'react'
+import { Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
+import type { ServerView } from '@shared/types'
+import { Button, IconButton, StatusDot, Tag } from '../../components/ui'
+import { relativeTime } from '../../lib/format'
+import { useSessions } from '../../stores/sessions'
+import { useUi } from '../../stores/ui'
+import { useVault } from '../../stores/vault'
+
+function matches(server: ServerView, query: string, tag: string | null): boolean {
+  if (tag && !server.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return false
+  if (!query) return true
+  const q = query.toLowerCase()
+  return (
+    server.name.toLowerCase().includes(q) ||
+    server.host.toLowerCase().includes(q) ||
+    server.username.toLowerCase().includes(q) ||
+    server.tags.some((t) => t.toLowerCase().includes(q))
+  )
+}
+
+export function ServersView() {
+  const servers = useVault((s) => s.servers)
+  const { search, activeTag, setSearch, openServerForm } = useUi()
+  const open = useSessions((s) => s.open)
+  const tabs = useSessions((s) => s.tabs)
+
+  const filtered = useMemo(
+    () => servers.filter((s) => matches(s, search.trim(), activeTag)),
+    [servers, search, activeTag]
+  )
+
+  const connect = (server: ServerView) => {
+    void open(server).catch(() => undefined)
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 border-b border-line px-6 py-4">
+        <div className="relative w-full max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+          <input
+            id="servers-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search servers, hosts, tags…"
+            className="h-10 w-full rounded-lg border border-line bg-inset pl-9 pr-16 text-sm text-fg placeholder:text-faint transition-colors duration-150 focus:border-accent"
+          />
+          {search ? (
+            <button
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-faint hover:text-fg"
+            >
+              <X size={14} />
+            </button>
+          ) : (
+            <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-faint">
+              Ctrl+Shift+F
+            </kbd>
+          )}
+        </div>
+        <div className="ml-auto">
+          <Button size="sm" onClick={() => openServerForm(null)}>
+            <Plus size={15} />
+            Add server
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {servers.length === 0 ? (
+          <EmptyState onAdd={() => openServerForm(null)} />
+        ) : filtered.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
+            <Search size={28} className="text-faint" />
+            <p className="text-sm">No servers match “{search}”</p>
+          </div>
+        ) : (
+          <ul id="server-list" className="flex flex-col gap-1.5" role="listbox" aria-label="Servers">
+            {filtered.map((server) => {
+              const liveTabs = tabs.filter((t) => t.serverId === server.id && !['closed', 'error'].includes(t.status))
+              return (
+                <li key={server.id}>
+                  <div
+                    role="option"
+                    aria-selected={false}
+                    tabIndex={0}
+                    onClick={() => connect(server)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        connect(server)
+                      }
+                    }}
+                    className="group flex cursor-pointer items-center gap-4 rounded-xl border border-line-soft bg-panel px-4 py-3.5 transition-all duration-150 hover:border-accent/50 hover:bg-panel-2"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-inset text-muted transition-colors duration-150 group-hover:text-accent">
+                      <Server size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[14px] font-medium text-fg">{server.name}</span>
+                        {liveTabs.length > 0 && (
+                          <StatusDot color="var(--ok)" />
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate font-mono text-[12px] text-muted/90">
+                        {server.username}@{server.host}
+                        {server.port !== 22 ? (
+                          <span className="text-muted/70">:{server.port}</span>
+                        ) : null}
+                        {server.elevate.enabled && (
+                          <span className="ml-2 rounded border border-line bg-inset px-1 py-px font-sans text-[10px] tracking-wide text-accent">
+                            AUTO-SUDO
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                      {server.tags.slice(0, 3).map((tag) => (
+                        <Tag key={tag}>{tag}</Tag>
+                      ))}
+                    </div>
+                    <span className="ml-auto w-24 shrink-0 text-right text-[12px] text-muted/80">
+                      {relativeTime(server.lastConnectedAt)}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                      <IconButton
+                        label={`Edit ${server.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openServerForm(server)
+                        }}
+                      >
+                        <Pencil size={15} />
+                      </IconButton>
+                      <IconButton
+                        label={`Delete ${server.name}`}
+                        className="hover:text-danger"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          useUi.getState().openDelete(server)
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </IconButton>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        connect(server)
+                      }}
+                    >
+                      <Play size={13} />
+                      Connect
+                    </Button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 py-16 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+        <Server size={28} />
+      </div>
+      <div>
+        <h2 className="text-[15px] font-semibold text-fg">Add your first server</h2>
+        <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-muted">
+          Store its name, address and password in the encrypted vault — then connect with a single
+          click, every time.
+        </p>
+      </div>
+      <Button onClick={onAdd}>
+        <Plus size={15} />
+        Add server
+      </Button>
+    </div>
+  )
+}

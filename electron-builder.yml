@@ -1,0 +1,31 @@
+appId: app.sshvault.desktop
+productName: SSH Vault
+copyright: MIT
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+asarUnpack:
+  - resources/**
+  - node_modules/@node-rs/**
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: true
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-${version}-setup.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+electronDownload:
+  cache: node_modules/.electron-cache
+afterPack: ./scripts/fuses.cjs
