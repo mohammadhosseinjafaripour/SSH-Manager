@@ -178,7 +178,7 @@ export function Dialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="overlay-in fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
-          className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] overflow-y-auto rounded-2xl border border-line bg-panel p-6 shadow-2xl`}
+          className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-panel p-6 shadow-2xl`}
         >
           {title ? (
             <div className="mb-4 flex items-start justify-between gap-4">
