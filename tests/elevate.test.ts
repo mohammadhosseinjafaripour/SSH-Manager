@@ -25,22 +25,39 @@ function makeDetector(nonce: string): { detector: ElevateDetector; rec: Recorded
 const marker = (nonce: string) => `[SSHVAULT:${nonce}]`
 
 describe('buildElevateLine', () => {
-  it('injects -S -k -p marker into presets', () => {
+  it('validates with sudo -v, restores echo, THEN starts the shell', () => {
     const nonce = makeNonce()
     expect(buildElevateLine('sudo -s', '', nonce)).toBe(
-      `stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -s; stty echo`
+      `stty -echo; sudo -S -k -v -p '[SSHVAULT:${nonce}]' && stty echo && sudo -s; stty echo`
     )
-    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`' -i;`)
-    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' su -;`)
+  })
+
+  it('injects the marker into every preset', () => {
+    const nonce = makeNonce()
+    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`]' && stty echo && sudo -i;`)
+    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' && stty echo && sudo su -;`)
   })
 
   it('supports custom sudo commands', () => {
     const nonce = makeNonce()
     const line = buildElevateLine('custom', 'sudo -u admin -s', nonce)
-    expect(line).toBe(`stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -u admin -s; stty echo`)
+    expect(line).toBe(
+      `stty -echo; sudo -S -k -v -p '[SSHVAULT:${nonce}]' && stty echo && sudo -u admin -s; stty echo`
+    )
   })
 
-  it('contains no secrets and restores echo at the end', () => {
+  it('REGRESSION: echo is restored BEFORE the root shell starts', () => {
+    // `sudo -s` runs a shell inside sudo, so a trailing `stty echo` would only
+    // run after that shell exits — leaving the whole root session with echo
+    // off (typing works but is invisible). Echo must be restored first.
+    const line = buildElevateLine('sudo -s', '', makeNonce())
+    const echoIdx = line.indexOf('&& stty echo &&')
+    const shellIdx = line.indexOf('&& sudo -s')
+    expect(echoIdx).toBeGreaterThan(-1)
+    expect(shellIdx).toBeGreaterThan(echoIdx)
+  })
+
+  it('contains no secrets and keeps a trailing echo safety net', () => {
     const line = buildElevateLine('sudo -s', '', makeNonce())
     expect(line.endsWith('; stty echo')).toBe(true)
     expect(line.startsWith('stty -echo;')).toBe(true)

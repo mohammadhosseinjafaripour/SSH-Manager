@@ -129,8 +129,14 @@ download. Production dependency audit: `npm audit --omit=dev` is clean at releas
 ## Auto-sudo: how it stays safe
 
 ```
-stty -echo; sudo -S -k -p '[SSHVAULT:<nonce>]' -s; stty echo
+stty -echo; sudo -S -k -v -p '[SSHVAULT:<nonce>]' && stty echo && sudo -s; stty echo
 ```
+
+Two phases, because `sudo -s` runs a shell *inside* sudo:
+
+1. `sudo -v` validates the password and caches a ticket (prompt → stderr → PTY).
+2. On success, `stty echo` restores echo **in your own shell**, then the root shell starts
+   with the cached ticket — so echo is on for the whole session.
 
 - `-k` makes the prompt deterministic (kills cached sudo tickets)
 - the per-attempt `nonce` prevents false matches on banners/MOTD; the detector ignores the
@@ -138,8 +144,9 @@ stty -echo; sudo -S -k -p '[SSHVAULT:<nonce>]' -s; stty echo
 - the password is written **only** on an exact match of the bare marker — once, never on
   timeout, never retried, never speculatively
 - no timed writes anywhere: a timed `stty echo` could be eaten by sudo as a second password
-  attempt and lock the account on slow-auth servers; echo is restored by the trailing
-  `; stty echo` instead
+  attempt and lock the account on slow-auth servers
+- if sudo rejects the password and waits for another attempt, the app sends Ctrl+C and
+  restores echo, so the terminal is never left accepting invisible input
 - NOPASSWD servers (no prompt) and missing sudo are detected and reported — nothing is ever
   written into the live shell
 

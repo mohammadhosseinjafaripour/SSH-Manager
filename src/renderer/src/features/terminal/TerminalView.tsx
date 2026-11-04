@@ -199,8 +199,15 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
       )}
 
       {tab.status === 'elevate-failed' && tab.detail && (
-        <div className="absolute inset-x-0 bottom-3 mx-auto w-fit max-w-[90%] rounded-lg border border-warn/40 bg-warn-soft px-3 py-1.5 text-[12.5px] text-warn shadow-lg">
-          Auto-sudo: {tab.detail}
+        <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-lg border border-warn/40 bg-warn-soft px-3 py-1.5 text-[12.5px] text-warn shadow-lg">
+          <span>Auto-sudo: {tab.detail}</span>
+          <button
+            onClick={() => sessionPorts.get(tab.sessionId)?.send({ type: 'input', data: 'stty echo\r' })}
+            className="shrink-0 rounded border border-warn/50 px-2 py-0.5 text-[11.5px] font-medium transition-colors duration-150 hover:bg-warn/20"
+            title="If typing is invisible, this restores terminal echo"
+          >
+            Restore echo
+          </button>
         </div>
       )}
     </div>

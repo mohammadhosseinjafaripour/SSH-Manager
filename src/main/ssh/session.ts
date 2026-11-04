@@ -253,6 +253,13 @@ export class SshSession {
       onStatus: (status, detail) => {
         this.setStatus(status)
         this.post({ type: 'status', status, detail })
+      },
+      onAbort: () => {
+        // sudo is still waiting for another password attempt. Abort it and
+        // restore echo, otherwise the user is left with a terminal that
+        // accepts input but displays nothing.
+        this.stream?.write('\x03')
+        setTimeout(() => this.stream?.write('stty echo\r'), 120)
       }
     })
     const line = buildElevateLine(elevate.preset, elevate.customCommand, nonce)

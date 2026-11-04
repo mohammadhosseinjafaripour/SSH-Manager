@@ -31,6 +31,12 @@ export interface ElevateHandlers {
   /** Called at most once, only on exact bare-marker match. */
   onSendPassword(): void
   onStatus(status: ElevateStatus, detail?: string): void
+  /**
+   * Called when sudo is left waiting for another password attempt after a
+   * rejection. The session sends Ctrl+C to abort it and restores echo, so
+   * the user is never stranded with an invisible terminal.
+   */
+  onAbort?(): void
 }
 
 /** How long to keep watching for a prompt before reporting "no prompt". */
@@ -40,13 +46,14 @@ const UNVERIFIED_MS = 2500
 /** Sliding window of recent output in which markers/failures are matched. */
 const WINDOW = 1024
 
-const FAILURE_PATTERNS: ReadonlyArray<{ re: RegExp; detail: string }> = [
-  { re: /sorry, try again/i, detail: 'Sudo rejected the password' },
-  { re: /incorrect password attempt/i, detail: 'Sudo rejected the password' },
-  { re: /no password was provided/i, detail: 'Sudo expected a password but none was sent' },
-  { re: /not in the sudoers file/i, detail: 'This user is not in the sudoers file' },
-  { re: /sudo: command not found/i, detail: 'sudo is not installed on this server' },
-  { re: /authentication failure/i, detail: 'Sudo authentication failed' }
+/** `hangs` = sudo is still waiting for input and must be aborted. */
+const FAILURE_PATTERNS: ReadonlyArray<{ re: RegExp; detail: string; hangs: boolean }> = [
+  { re: /sorry, try again/i, detail: 'Sudo rejected the password', hangs: true },
+  { re: /incorrect password attempt/i, detail: 'Sudo rejected the password', hangs: true },
+  { re: /no password was provided/i, detail: 'Sudo expected a password but none was sent', hangs: false },
+  { re: /not in the sudoers file/i, detail: 'This user is not in the sudoers file', hangs: false },
+  { re: /sudo: command not found/i, detail: 'sudo is not installed on this server', hangs: false },
+  { re: /authentication failure/i, detail: 'Sudo authentication failed', hangs: true }
 ]
 
 export function makeNonce(): string {
@@ -57,21 +64,28 @@ export function makeNonce(): string {
 
 /**
  * Builds the elevation line for a preset ("sudo -s", "sudo -i", "sudo su -")
- * or a custom command that must start with `sudo`. The sudo flags are
- * injected right after the leading `sudo` token:
+ * or a custom command that must start with `sudo`.
  *
- *   stty -echo; sudo -S -k -p '[SSHVAULT:<nonce>]' <rest>; stty echo
+ *   stty -echo; sudo -S -k -v -p '[SSHVAULT:<nonce>]' && stty echo && sudo <rest>; stty echo
  *
- * - `-S` reads the password from stdin (prompt goes to stderr → the PTY)
- * - `-k` invalidates any cached timestamp so the prompt is deterministic
- * - `stty -echo` suppresses terminal echo of the password while sudo reads it
- * - the trailing `stty echo` restores echo whenever sudo exits (success or
- *   failure) without any timed write from our side
+ * Two phases, because `sudo -s` runs a shell INSIDE sudo: a trailing
+ * `stty echo` would only run after that root shell exits, leaving echo off
+ * for the whole session (typing works but is invisible).
+ *
+ * 1. `sudo -v` validates the password and caches a ticket. `-S` reads the
+ *    password from stdin (prompt → stderr → PTY), `-k` makes the prompt
+ *    deterministic, `stty -echo` hides the password while it is read.
+ * 2. On success, `stty echo` restores echo in the USER's shell, then the
+ *    elevation command runs with the cached ticket — so the root shell
+ *    starts with echo ON.
+ *
+ * The trailing `; stty echo` is a safety net for the failure path (sudo
+ * exits without starting a shell).
  */
 export function buildElevateLine(preset: string, customCommand: string, nonce: string): string {
   const base = preset === 'custom' ? customCommand.trim() : preset
   const rest = base.replace(/^\s*sudo\b\s*/, '').trim()
-  return `stty -echo; sudo -S -k -p '${ELEVATE_MARKER_PREFIX}${nonce}]' ${rest}; stty echo`
+  return `stty -echo; sudo -S -k -v -p '${ELEVATE_MARKER_PREFIX}${nonce}]' && stty echo && sudo ${rest}; stty echo`
 }
 
 /** Finds a *bare* occurrence of the marker (not wrapped in single quotes). */
@@ -132,9 +146,9 @@ export class ElevateDetector {
       return
     }
 
-    for (const { re, detail } of FAILURE_PATTERNS) {
+    for (const { re, detail, hangs } of FAILURE_PATTERNS) {
       if (re.test(this.buf)) {
-        this.settle('elevate-failed', detail)
+        this.settle('elevate-failed', detail, hangs)
         return
       }
     }
@@ -162,9 +176,10 @@ export class ElevateDetector {
     return this.sent
   }
 
-  private settle(status: ElevateStatus, detail?: string): void {
+  private settle(status: ElevateStatus, detail?: string, abort = false): void {
     this.hardSettled = true
     this.dispose()
+    if (abort) this.handlers.onAbort?.()
     this.handlers.onStatus(status, detail)
   }
 
