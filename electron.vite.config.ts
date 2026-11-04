@@ -14,6 +14,17 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      // The renderer runs sandboxed, which requires a CommonJS preload.
+      // With "type": "module" electron-vite would otherwise emit ESM
+      // (index.mjs) — unsupported with sandbox: true.
+      rollupOptions: {
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs'
+        }
+      }
+    },
     resolve: { alias }
   },
   renderer: {
