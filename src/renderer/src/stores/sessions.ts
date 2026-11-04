@@ -10,6 +10,13 @@ import { serverById } from './vault'
 export const sessionPorts = new Map<string, SessionPort>()
 export const terminalWriters = new Map<string, (data: string) => void>()
 
+/**
+ * Output that arrived before xterm mounted. The SSH banner/motd can reach us
+ * in the same tick the session opens, while the terminal component is still
+ * rendering — without this buffer those first bytes were silently dropped.
+ */
+const pendingOutput = new Map<string, string[]>()
+
 export interface SessionTab {
   sessionId: string
   serverId: string
@@ -20,9 +27,18 @@ export interface SessionTab {
 
 function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
   switch (msg.type) {
-    case 'data':
-      terminalWriters.get(sessionId)?.(msg.data)
+    case 'data': {
+      const write = terminalWriters.get(sessionId)
+      if (write) {
+        write(msg.data)
+      } else {
+        // Terminal not mounted yet — hold the bytes and flush on registration.
+        const buf = pendingOutput.get(sessionId)
+        if (buf) buf.push(msg.data)
+        else pendingOutput.set(sessionId, [msg.data])
+      }
       return
+    }
     case 'status':
       useSessions.getState().setStatus(sessionId, msg.status, msg.detail)
       return
@@ -45,7 +61,12 @@ function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
   }
 }
 
+/** Guards against wiring the same port twice (duplicate data delivery). */
+const wiredPorts = new Set<string>()
+
 function wirePort(sessionId: string, port: SessionPort): void {
+  if (wiredPorts.has(sessionId)) return
+  wiredPorts.add(sessionId)
   port.onMessage((msg) => dispatchPortMessage(sessionId, msg))
 }
 
@@ -71,8 +92,11 @@ export const useSessions = create<SessionsState>((set, get) => ({
       tabs: [...s.tabs, { sessionId, serverId: server.id, name: server.name, status: 'connecting' }],
       active: sessionId
     }))
+    // The port may already have been delivered (onSessionPort wired it) or may
+    // arrive later (registerPort wires it). Both paths converge here; only
+    // wire once to avoid duplicate listeners.
     const port = sessionPorts.get(sessionId)
-    if (port) wirePort(sessionId, port)
+    if (port && !wiredPorts.has(sessionId)) wirePort(sessionId, port)
   },
 
   select: (which) => set({ active: which }),
@@ -90,6 +114,7 @@ export const useSessions = create<SessionsState>((set, get) => ({
     sessionPorts.get(sessionId)?.close()
     sessionPorts.delete(sessionId)
     terminalWriters.delete(sessionId)
+    wiredPorts.delete(sessionId)
     void window.sshvault.sessionClose(sessionId).catch(() => undefined)
     const ui = useUi.getState()
     if (ui.hostkey?.sessionId === sessionId) ui.closeHostKey()
@@ -133,8 +158,15 @@ export const useSessions = create<SessionsState>((set, get) => ({
 /** Terminal data pump without React re-renders. */
 export function registerTerminalWriter(sessionId: string, write: (data: string) => void): void {
   terminalWriters.set(sessionId, write)
+  // Flush anything that arrived while the terminal was mounting.
+  const buffered = pendingOutput.get(sessionId)
+  if (buffered) {
+    pendingOutput.delete(sessionId)
+    for (const chunk of buffered) write(chunk)
+  }
 }
 
 export function unregisterTerminalWriter(sessionId: string): void {
   terminalWriters.delete(sessionId)
+  pendingOutput.delete(sessionId)
 }

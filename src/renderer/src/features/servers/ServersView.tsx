@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ArrowUpFromLine, Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
+import { ArrowRight, ArrowUpFromLine, Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
 import type { ServerView } from '@shared/types'
 import { Button, IconButton, StatusDot, Tag } from '../../components/ui'
 import { relativeTime } from '../../lib/format'
@@ -23,6 +23,7 @@ export function ServersView() {
   const servers = useVault((s) => s.servers)
   const { search, activeTag, setSearch, openServerForm } = useUi()
   const open = useSessions((s) => s.open)
+  const select = useSessions((s) => s.select)
   const tabs = useSessions((s) => s.tabs)
 
   const filtered = useMemo(
@@ -30,7 +31,19 @@ export function ServersView() {
     [servers, search, activeTag]
   )
 
+  /**
+   * Clicking a server with an open session jumps to that tab instead of
+   * opening a duplicate — with several servers you can always get back to
+   * the session you were using.
+   */
   const connect = (server: ServerView) => {
+    const existing = tabs.find(
+      (t) => t.serverId === server.id && !['closed', 'error'].includes(t.status)
+    )
+    if (existing) {
+      select(existing.sessionId)
+      return
+    }
     void open(server).catch(() => undefined)
   }
 
@@ -102,7 +115,13 @@ export function ServersView() {
                       <div className="flex items-center gap-2">
                         <span className="truncate text-[14px] font-medium text-fg">{server.name}</span>
                         {liveTabs.length > 0 && (
-                          <StatusDot color="var(--ok)" />
+                          <span
+                            className="flex shrink-0 items-center gap-1 rounded-full border border-ok/40 bg-[color-mix(in_srgb,var(--ok)_12%,transparent)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ok"
+                            title={`${liveTabs.length} open session${liveTabs.length > 1 ? 's' : ''} — click to switch`}
+                          >
+                            <StatusDot color="var(--ok)" />
+                            Live
+                          </span>
                         )}
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[12px] text-muted/90">
@@ -148,15 +167,15 @@ export function ServersView() {
                     </div>
                     <Button
                       size="sm"
-                      variant="secondary"
+                      variant={liveTabs.length > 0 ? 'primary' : 'secondary'}
                       className="shrink-0"
                       onClick={(e) => {
                         e.stopPropagation()
                         connect(server)
                       }}
                     >
-                      <Play size={13} />
-                      Connect
+                      {liveTabs.length > 0 ? <ArrowRight size={13} /> : <Play size={13} />}
+                      {liveTabs.length > 0 ? 'Switch' : 'Connect'}
                     </Button>
                   </div>
                 </li>

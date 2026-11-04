@@ -30,12 +30,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', loading, className = '', children, disabled, ...rest },
+  { variant = 'primary', size = 'md', loading, className = '', children, disabled, type = 'button', ...rest },
   ref
 ) {
   return (
     <button
       ref={ref}
+      type={type}
       className={`${buttonBase} ${buttonVariants[variant]} ${buttonSizes[size]} ${className}`}
       disabled={disabled || loading}
       {...rest}
@@ -46,14 +47,21 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   )
 })
 
+/**
+ * Defaults to type="button": an icon button inside a <form> would otherwise
+ * default to type="submit" and submit the form (e.g. the password reveal
+ * toggle closing the dialog).
+ */
 export function IconButton({
   label,
   className = '',
   children,
+  type = 'button',
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
     <button
+      type={type}
       aria-label={label}
       title={label}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg ${className}`}

@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { Pencil, RefreshCw, X } from 'lucide-react'
 import { Button } from '../../components/ui'
-import { serverById, useVault } from '../../stores/vault'
+import { serverById } from '../../stores/vault'
 import {
   registerTerminalWriter,
   sessionPorts,
@@ -156,17 +156,33 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
     <div className="relative h-full w-full overflow-hidden">
       <div ref={hostRef} className="h-full w-full bg-[var(--term-bg)]" />
 
-      {showConnecting && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-bg/60">
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-accent" />
-          <span className="text-[13px] text-muted">
-            Connecting to <span className="font-mono">{tab.name}</span>…
-          </span>
-        </div>
-      )}
+      {/* Fades in/out instead of popping, so switching tabs and connecting
+          feel continuous rather than flickering. `visibility` (not just
+          opacity) keeps stale status text out of the accessibility tree and
+          out of any screenshot/DOM reading once connected. */}
+      <div
+        className={`absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg/70 backdrop-blur-[1px] transition-[opacity,visibility] duration-200 ease-out ${
+          showConnecting
+            ? 'visible opacity-100'
+            : 'invisible opacity-0 delay-200'
+        }`}
+        aria-hidden={!showConnecting}
+      >
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent" />
+        <span className="text-[13px] text-muted">
+          Connecting to <span className="font-mono text-fg">{tab.name}</span>…
+        </span>
+        <span className="text-[11.5px] text-faint">
+          {tab.status === 'hostkey-unknown'
+            ? 'Waiting for you to verify the host key'
+            : tab.status === 'hostkey-changed'
+              ? 'Host key changed — connection blocked'
+              : 'Establishing secure channel'}
+        </span>
+      </div>
 
       {showFailure && (
-        <div className="absolute inset-x-0 top-3 mx-auto w-fit max-w-[90%]">
+        <div className="banner-in absolute inset-x-0 top-3 mx-auto w-fit max-w-[90%]">
           <div className="flex items-center gap-3 rounded-xl border border-line bg-panel px-4 py-2.5 shadow-xl">
             <span className="text-[13px] text-fg">
               <span style={{ color: meta.color }} className="font-medium">
@@ -219,60 +235,83 @@ export function TerminalView() {
   const active = useSessions((s) => s.active)
   const select = useSessions((s) => s.select)
   const closeTab = useSessions((s) => s.closeTab)
-  const servers = useVault((s) => s.servers)
-  void servers
+  const stripRef = useRef<HTMLDivElement>(null)
+
+  // Keep the active tab visible when tabs overflow the strip.
+  useEffect(() => {
+    const strip = stripRef.current
+    if (!strip || active === 'servers') return
+    const el = strip.querySelector<HTMLElement>(`[data-tab="${active}"]`)
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  }, [active, tabs.length])
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
         <button
           onClick={() => select('servers')}
-          className={`flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors duration-150 ${
+          className={`flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors duration-150 ${
             active === 'servers' ? 'bg-panel-2 text-fg' : 'text-muted hover:bg-panel-2/60 hover:text-fg'
           }`}
         >
           Servers
         </button>
-        <div className="mx-1 h-5 w-px bg-line" />
-        {tabs.map((t) => {
-          const meta = STATUS_META[t.status] ?? STATUS_META.connected
-          const isActive = active === t.sessionId
-          return (
-            <div
-              key={t.sessionId}
-              className={`group flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-[13px] transition-colors duration-150 ${
-                isActive ? 'bg-panel-2 text-fg' : 'text-muted hover:bg-panel-2/60 hover:text-fg'
-              }`}
-              onClick={() => select(t.sessionId)}
-              title={`${t.name} — ${meta.label}`}
-            >
-              <span
-                className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
-                style={{
-                  background: meta.color,
-                  animation:
-                    t.status === 'connecting' ? 'pulse-dot 1.6s ease-in-out infinite' : undefined
-                }}
-              />
-              <span className="max-w-40 truncate">{t.name}</span>
-              {meta.label === 'Root' || t.status.startsWith('elevated') ? (
-                <span className="rounded border border-accent/40 px-1 text-[10px] font-semibold tracking-wide text-accent">
-                  ROOT
-                </span>
-              ) : null}
-              <button
-                aria-label={`Close ${t.name} tab`}
-                className="rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 hover:text-danger group-hover:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeTab(t.sessionId)
-                }}
+        <div className="mx-1 h-5 w-px shrink-0 bg-line" />
+
+        {/* Scrollable tab strip: many sessions stay reachable instead of
+            being clipped off the right edge. */}
+        <div
+          ref={stripRef}
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {tabs.map((t) => {
+            const meta = STATUS_META[t.status] ?? STATUS_META.connected
+            const isActive = active === t.sessionId
+            return (
+              <div
+                key={t.sessionId}
+                data-tab={t.sessionId}
+                className={`group flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-3 text-[13px] transition-colors duration-150 ${
+                  isActive ? 'bg-panel-2 text-fg' : 'text-muted hover:bg-panel-2/60 hover:text-fg'
+                }`}
+                onClick={() => select(t.sessionId)}
+                title={`${t.name} — ${meta.label}`}
               >
-                <X size={13} />
-              </button>
-            </div>
-          )
-        })}
+                <span
+                  className="inline-block h-[7px] w-[7px] shrink-0 rounded-full"
+                  style={{
+                    background: meta.color,
+                    animation:
+                      t.status === 'connecting' ? 'pulse-dot 1.6s ease-in-out infinite' : undefined
+                  }}
+                />
+                <span className="max-w-40 truncate">{t.name}</span>
+                {meta.label === 'Root' || t.status.startsWith('elevated') ? (
+                  <span className="rounded border border-accent/40 px-1 text-[10px] font-semibold tracking-wide text-accent">
+                    ROOT
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Close ${t.name} tab`}
+                  className="rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 hover:text-danger group-hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeTab(t.sessionId)
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        {tabs.length > 1 && (
+          <span className="shrink-0 pr-1 text-[11px] tabular-nums text-faint" title="Open sessions">
+            {tabs.length}
+          </span>
+        )}
       </div>
 
       <div className="relative min-h-0 flex-1">
