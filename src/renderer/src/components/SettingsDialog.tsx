@@ -1,6 +1,6 @@
 import { ArrowDownToLine, ArrowUpFromLine, FileSpreadsheet, Moon, Settings2, Sun } from 'lucide-react'
 import type { Theme } from '@shared/types'
-import { Button, Dialog, Field, Input } from './ui'
+import { Button, Dialog, Field, Input, Switch } from './ui'
 import { applyTheme } from '../lib/theme'
 import { useUi } from '../stores/ui'
 import { useVault } from '../stores/vault'
@@ -74,6 +74,36 @@ export function SettingsDialog() {
             onBlur={(e) => void saveIdle(e.target.value)}
           />
         </Field>
+
+        <div className="flex flex-col gap-3 border-t border-line pt-4">
+          <p className="text-[13px] font-medium text-fg">Connection</p>
+          <label className="flex cursor-pointer items-start justify-between gap-3">
+            <span>
+              <span className="block text-[12.5px] text-fg">Keep sessions alive</span>
+              <span className="block text-[11.5px] leading-relaxed text-muted">
+                Sends keepalives so idle sessions survive NAT and firewall timeouts
+              </span>
+            </span>
+            <Switch
+              label="Keep sessions alive"
+              checked={settings.keepAlive !== false}
+              onCheckedChange={(v) => void updateSettings({ keepAlive: v })}
+            />
+          </label>
+          <label className="flex cursor-pointer items-start justify-between gap-3">
+            <span>
+              <span className="block text-[12.5px] text-fg">Auto-reconnect</span>
+              <span className="block text-[11.5px] leading-relaxed text-muted">
+                Reconnect automatically when a session drops, keeping its output
+              </span>
+            </span>
+            <Switch
+              label="Auto-reconnect"
+              checked={settings.autoReconnect !== false}
+              onCheckedChange={(v) => void updateSettings({ autoReconnect: v })}
+            />
+          </label>
+        </div>
 
         <div className="border-t border-line pt-4">
           <p className="mb-2.5 text-[13px] font-medium text-fg">Move your servers</p>

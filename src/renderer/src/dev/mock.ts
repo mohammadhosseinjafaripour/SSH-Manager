@@ -10,6 +10,7 @@ import { randomUUID } from './uuid'
 import type {
   Bridge,
   MainPortMessage,
+  RemoteEntry,
   RendererPortMessage,
   ServerEntry,
   ServerUpsertInput,
@@ -32,7 +33,7 @@ const defaultState: MockState = {
   created: false,
   masterPassword: '',
   servers: seedServers(),
-  settings: { idleLockMinutes: 10, theme: 'dark' },
+  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true },
   pinned: {}
 }
 
@@ -109,6 +110,37 @@ type PortListener = (sessionId: string, port: SessionPort) => void
 type LockedListener = () => void
 
 let pendingMockImport: { raw: string; format: 'encrypted' | 'csv' } | null = null
+
+/** Fake remote filesystem for the Files panel in dev/browser mode. */
+const mockSftp = new Map<string, Record<string, RemoteEntry[]>>()
+
+function mockRemoteTree(): Record<string, RemoteEntry[]> {
+  const mk = (name: string, kind: RemoteEntry['kind'], size: number): RemoteEntry => ({
+    name,
+    path: '',
+    kind,
+    size,
+    modifiedAt: new Date(Date.now() - Math.random() * 8e8).toISOString(),
+    permissions: kind === 'dir' ? 0o755 : 0o644,
+    isSymlink: false
+  })
+  return {
+    '/': [mk('etc', 'dir', 0), mk('home', 'dir', 0), mk('var', 'dir', 0)],
+    '/home': [mk('deploy', 'dir', 0), mk('admin', 'dir', 0)],
+    '/home/deploy': [
+      mk('app', 'dir', 0),
+      mk('logs', 'dir', 0),
+      mk('deploy.sh', 'file', 2148),
+      mk('config.yml', 'file', 891),
+      mk('README.md', 'file', 4210)
+    ],
+    '/home/deploy/logs': [
+      mk('app.log', 'file', 1_204_882),
+      mk('error.log', 'file', 92_331)
+    ],
+    '/home/deploy/app': [mk('server.js', 'file', 12_004), mk('package.json', 'file', 1204)]
+  }
+}
 
 /** Browser stand-in for the native save dialog used by the real app. */
 function triggerBrowserDownload(fileName: string, contents: string): void {
@@ -415,6 +447,56 @@ export function createMockBridge(): Bridge {
       if (!s || confirmation.trim() !== s.name) throw new Error('replace-confirmation-mismatch')
       return undefined
     },
+    // ---- SFTP (mock: an in-memory remote tree, no real transfers) ----------
+    sftpOpen: async ({ serverId }) => {
+      const s = state.servers.find((x) => x.id === serverId)
+      if (!s) throw new Error('not-found')
+      const id = randomUUID()
+      mockSftp.set(id, { ...mockRemoteTree() })
+      return { connectionId: id, homeDir: '/home/' + s.username }
+    },
+    sftpClose: async ({ connectionId }) => {
+      mockSftp.delete(connectionId)
+    },
+    sftpList: async ({ connectionId, dir }) => {
+      const tree = mockSftp.get(connectionId)
+      if (!tree) throw new Error('sftp-not-connected:open the Files panel again')
+      return (tree[dir] ?? []).map((e) => ({ ...e, path: `${dir.replace(/\/$/, '')}/${e.name}` }))
+    },
+    sftpMkdir: async ({ connectionId, dir }) => {
+      const tree = mockSftp.get(connectionId)
+      if (!tree) throw new Error('sftp-not-connected:open the Files panel again')
+      tree[dir] = []
+      const parent = dir.slice(0, dir.lastIndexOf('/')) || '/'
+      tree[parent] ??= []
+      tree[parent].push({
+        name: dir.slice(dir.lastIndexOf('/') + 1),
+        path: dir,
+        kind: 'dir',
+        size: 0,
+        modifiedAt: new Date().toISOString(),
+        permissions: 0o755,
+        isSymlink: false
+      })
+    },
+    sftpDelete: async ({ connectionId, target }) => {
+      const tree = mockSftp.get(connectionId)
+      if (!tree) throw new Error('sftp-not-connected:open the Files panel again')
+      const parent = target.slice(0, target.lastIndexOf('/')) || '/'
+      tree[parent] = (tree[parent] ?? []).filter((e) => `${parent.replace(/\/$/, '')}/${e.name}` !== target)
+      delete tree[target]
+    },
+    sftpUpload: async ({ localPaths }) => {
+      await new Promise((r) => setTimeout(r, 900))
+      return { uploaded: localPaths.length }
+    },
+    sftpPickAndUpload: async () => ({ ok: false, uploaded: 0 }),
+    sftpDownload: async () => ({ ok: false, downloaded: 0 }),
+    sftpCancel: async () => undefined,
+    resolveDroppedPaths: async ({ files }) =>
+      (files ?? []).map((f) => f.path).filter((p): p is string => typeof p === 'string'),
+    onTransferProgress: () => () => undefined,
+
     onSessionPort: (cb) => {
       portListeners.push(cb)
       return () => {

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
-import { Pencil, RefreshCw, X } from 'lucide-react'
+import { FolderClosed, Pencil, RefreshCw, X } from 'lucide-react'
+import { FilesPanel } from '../files/FilesPanel'
 import { Button } from '../../components/ui'
 import { serverById } from '../../stores/vault'
 import {
@@ -96,25 +97,55 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
       if (sel) void navigator.clipboard.writeText(sel).catch(() => undefined)
     })
 
+    /**
+     * Clipboard. Inside the terminal, Ctrl+Shift+C copies the selection and
+     * Ctrl+Shift+V pastes; plain Ctrl+C keeps sending SIGINT to the remote
+     * shell, which is what a terminal user expects. Both are intercepted here
+     * (xterm's key handler) because the browser default for Ctrl+V would never
+     * reach the PTY.
+     */
+    const paste = async () => {
+      try {
+        const text = await navigator.clipboard.readText()
+        if (!text) return
+        // Bracketed paste stops multi-line pastes from executing every line
+        // immediately (and lets vim/readline treat it as one paste).
+        port?.send({ type: 'input', data: `\x1b[200~${text}\x1b[201~` })
+      } catch {
+        /* clipboard permission denied */
+      }
+    }
+
     term.attachCustomKeyEventHandler((ev) => {
-      if (ev.type === 'keydown' && ev.ctrlKey && ev.shiftKey && ev.code === 'KeyC') {
+      if (ev.type !== 'keydown') return true
+      if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyC') {
         const sel = term.getSelection()
-        if (sel) {
-          void navigator.clipboard.writeText(sel).catch(() => undefined)
-          return false
-        }
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => undefined)
+        return false
+      }
+      if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyV') {
+        void paste()
+        return false
+      }
+      // Windows Terminal convention: Ctrl+Insert / Shift+Insert.
+      if (ev.ctrlKey && ev.code === 'Insert') {
+        const sel = term.getSelection()
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => undefined)
+        return false
+      }
+      if (ev.shiftKey && ev.code === 'Insert') {
+        void paste()
+        return false
       }
       return true
     })
 
+    // Right-click: copy when there's a selection, otherwise paste (PuTTY-like).
     const onContext = (e: MouseEvent) => {
       e.preventDefault()
-      navigator.clipboard
-        .readText()
-        .then((text) => {
-          if (text) port?.send({ type: 'input', data: text })
-        })
-        .catch(() => undefined)
+      const sel = term.getSelection()
+      if (sel) void navigator.clipboard.writeText(sel).catch(() => undefined)
+      else void paste()
     }
     host.addEventListener('contextmenu', onContext)
 
@@ -236,6 +267,16 @@ export function TerminalView() {
   const select = useSessions((s) => s.select)
   const closeTab = useSessions((s) => s.closeTab)
   const stripRef = useRef<HTMLDivElement>(null)
+  const [filesOpen, setFilesOpen] = useState(false)
+
+  const activeTab = tabs.find((t) => t.sessionId === active)
+  const filesUsable =
+    !!activeTab && (activeTab.status === 'connected' || activeTab.status.startsWith('elevated'))
+
+  // The Files panel belongs to a specific terminal tab. Deriving this instead
+  // of syncing it in an effect avoids a cascading render, and guarantees the
+  // panel can never be open while the server list is showing.
+  const filesVisible = filesOpen && active !== 'servers'
 
   // Keep the active tab visible when tabs overflow the strip.
   useEffect(() => {
@@ -307,6 +348,20 @@ export function TerminalView() {
           })}
         </div>
 
+        <button
+          type="button"
+          onClick={() => setFilesOpen((v) => !v)}
+          disabled={!filesUsable}
+          title={filesUsable ? 'Browse and transfer files (SFTP)' : 'Connect first to transfer files'}
+          aria-pressed={filesOpen}
+          className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] transition-colors duration-150 disabled:opacity-40 ${
+            filesOpen ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-panel-2 hover:text-fg'
+          }`}
+        >
+          <FolderClosed size={14} />
+          Files
+        </button>
+
         {tabs.length > 1 && (
           <span className="shrink-0 pr-1 text-[11px] tabular-nums text-faint" title="Open sessions">
             {tabs.length}
@@ -314,16 +369,28 @@ export function TerminalView() {
         )}
       </div>
 
-      <div className="relative min-h-0 flex-1">
-        {tabs.map((t) => (
-          <div
-            key={t.sessionId}
-            className="absolute inset-0"
-            style={{ visibility: active === t.sessionId ? 'visible' : 'hidden' }}
-          >
-            <TerminalPane tab={t} isActive={active === t.sessionId} />
-          </div>
-        ))}
+      <div className="flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          {tabs.map((t) => (
+            <div
+              key={t.sessionId}
+              className="absolute inset-0"
+              style={{ visibility: active === t.sessionId ? 'visible' : 'hidden' }}
+            >
+              <TerminalPane tab={t} isActive={active === t.sessionId} />
+            </div>
+          ))}
+        </div>
+
+        {filesVisible && activeTab && (
+          <aside className="w-[360px] shrink-0 border-l border-line">
+            <FilesPanel
+              key={activeTab.serverId}
+              serverId={activeTab.serverId}
+              onClose={() => setFilesOpen(false)}
+            />
+          </aside>
+        )}
       </div>
     </div>
   )

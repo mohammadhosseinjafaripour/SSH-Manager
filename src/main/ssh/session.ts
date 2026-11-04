@@ -8,9 +8,15 @@ import { checkPin, fingerprintOf } from '../hostkeys/verifier'
 import { ElevateDetector, buildElevateLine, makeNonce } from './elevate'
 
 const READY_TIMEOUT_MS = 20_000
+/**
+ * Keepalive tuning. 15s × 20 missed = 5 minutes of tolerance: long enough to
+ * survive a laptop sleep, a VPN blip or a slow NAT timeout, short enough that
+ * a genuinely dead link is noticed rather than hanging forever.
+ */
 const KEEPALIVE_INTERVAL_MS = 15_000
-const KEEPALIVE_MAX_MISSED = 6
+const KEEPALIVE_MAX_MISSED = 20
 const KI_ANSWER_TIMEOUT_MS = 120_000
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000]
 
 type HostKeyDecision = (accept: boolean) => void
 
@@ -39,6 +45,11 @@ export class SshSession {
   private kiAutoTried = false
   private ended = false
   private status: SessionStatus = 'connecting'
+  private reconnecting = false
+  private reconnectAttempt = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** Last known PTY size, reapplied after a reconnect. */
+  private lastSize = { cols: 80, rows: 24 }
 
   constructor(private readonly opts: SshSessionOptions) {}
 
@@ -58,7 +69,13 @@ export class SshSession {
   }
 
   start(): void {
+    this.connect()
+  }
+
+  /** (Re)establish the SSH connection. Safe to call for the first attempt or a retry. */
+  private connect(): void {
     const { host, port, username, password } = this.opts.server
+    this.clearReconnectTimer()
     const conn = (this.conn = new Client())
 
     conn.on('error', (err: Error) => this.onConnError(err))
@@ -68,6 +85,7 @@ export class SshSession {
       this.onKeyboardInteractive(name, instructions, prompts, finish)
     )
 
+    const keepAlive = this.settingOn('keepAlive')
     // Host key is verified BEFORE authentication: the password is never sent
     // to a host whose key is unknown-to-the-user or has changed.
     conn.connect({
@@ -77,17 +95,32 @@ export class SshSession {
       password,
       tryKeyboard: true,
       readyTimeout: READY_TIMEOUT_MS,
-      keepaliveInterval: KEEPALIVE_INTERVAL_MS,
-      keepaliveCountMax: KEEPALIVE_MAX_MISSED,
+      ...(keepAlive
+        ? {
+            keepaliveInterval: KEEPALIVE_INTERVAL_MS,
+            keepaliveCountMax: KEEPALIVE_MAX_MISSED
+          }
+        : {}),
       hostVerifier: (key: Buffer, cb?: (ok: boolean) => void) => {
         this.verifyHostKey(key, cb ?? (() => {}))
       }
     })
   }
 
+  /** Reads a boolean vault setting, defaulting to on if the vault is unavailable. */
+  private settingOn(key: 'keepAlive' | 'autoReconnect'): boolean {
+    try {
+      const s = this.opts.store.getPayload().settings
+      return s?.[key] !== false
+    } catch {
+      return true
+    }
+  }
+
   destroy(): void {
     if (this.ended) return
     this.ended = true
+    this.clearReconnectTimer()
     this.clearKiTimer()
     this.kiFinish = null
     this.pendingHostKey = null
@@ -206,6 +239,19 @@ export class SshSession {
   }
 
   private onClosed(): void {
+    // A deliberate close (user closed the tab) must never reconnect.
+    if (this.ended) return
+
+    const hadSession = this.status === 'connected' || this.status.startsWith('elevated')
+    const authFailed = this.status === 'auth-failed'
+
+    // Only retry transient drops of an established session — never retry a
+    // rejected password (it would feed lockout counters) or a host-key block.
+    if (hadSession && !authFailed && this.settingOn('autoReconnect')) {
+      this.scheduleReconnect()
+      return
+    }
+
     if (this.status !== 'error' && this.status !== 'auth-failed') {
       this.setStatus('closed')
     }
@@ -213,23 +259,80 @@ export class SshSession {
     this.destroy()
   }
 
+  /**
+   * Retries with exponential backoff, indefinitely. The tab, its scrollback
+   * and its position in the tab strip all survive, so an overnight drop just
+   * reconnects and leaves the previous output on screen.
+   */
+  private scheduleReconnect(): void {
+    this.clearReconnectTimer()
+    const delay =
+      RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)]
+    this.reconnectAttempt++
+    this.reconnecting = true
+
+    const secs = Math.round(delay / 1000)
+    this.setStatus(
+      'reconnecting',
+      `Connection lost — reconnecting in ${secs}s (attempt ${this.reconnectAttempt})`
+    )
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      if (this.ended) return
+      // Tear down the dead client before dialing again.
+      try {
+        this.conn?.removeAllListeners()
+        this.conn?.destroy()
+      } catch {
+        /* already gone */
+      }
+      this.conn = null
+      this.stream = null
+      this.detector?.finish()
+      this.detector = null
+      this.kiAutoTried = false
+      this.setStatus('connecting', `Reconnecting… (attempt ${this.reconnectAttempt})`)
+      this.connect()
+    }, delay)
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+  }
+
   private onReady(): void {
     const conn = this.conn
     if (!conn) return
-    conn.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (err, stream) => {
+    const resumed = this.reconnecting
+    this.reconnecting = false
+    this.reconnectAttempt = 0
+
+    const { cols, rows } = this.lastSize
+    conn.shell({ term: 'xterm-256color', cols, rows }, (err, stream) => {
       if (err) {
         this.fail('error', `Could not open a shell: ${err.message}`)
         return
       }
       this.stream = stream
+      // Defeat server-side idle timeouts (TMOUT, autologout, bash's
+      // TMOUT=600). Sent before anything else so it is in effect immediately;
+      // harmless on shells that don't support it.
+      stream.write('TMOUT=0; unset TMOUT 2>/dev/null; export TMOUT=0\n')
       stream.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8')
         this.post({ type: 'data', data: text })
         this.detector?.feed(text)
       })
       stream.on('close', () => this.onClosed())
-      this.setStatus('connected')
+      this.setStatus('connected', resumed ? 'Reconnected' : undefined)
+      // Re-run elevation after a reconnect: the new shell is a normal user
+      // shell again, so the root session must be re-established.
       if (this.opts.server.elevate.enabled) this.beginElevation()
+      else if (resumed) this.post({ type: 'notice', kind: 'reconnected' })
     })
   }
 
@@ -274,6 +377,7 @@ export class SshSession {
         this.stream?.write(msg.data)
         return
       case 'resize':
+        this.lastSize = { cols: msg.cols, rows: msg.rows }
         this.stream?.setWindow(msg.rows, msg.cols, 480, 640)
         return
       case 'activity':

@@ -19,7 +19,12 @@ interface VaultState {
 
 export const useVault = create<VaultState>((set) => ({
   phase: 'loading',
-  settings: { idleLockMinutes: 10, theme: 'dark' },
+  settings: {
+    idleLockMinutes: 10,
+    theme: 'dark',
+    keepAlive: true,
+    autoReconnect: true
+  },
   servers: [],
 
   init: async () => {

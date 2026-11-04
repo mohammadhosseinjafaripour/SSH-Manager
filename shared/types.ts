@@ -95,6 +95,10 @@ export interface HostKeyHistoryEntry {
 export interface VaultSettings {
   idleLockMinutes: number
   theme: Theme
+  /** Send SSH keepalives so NAT/firewalls don't silently drop idle sessions. */
+  keepAlive: boolean
+  /** Reconnect automatically when a session drops unexpectedly. */
+  autoReconnect: boolean
 }
 
 export interface VaultPayload {
@@ -112,6 +116,7 @@ export interface VaultBackupInfo {
 
 export type SessionStatus =
   | 'connecting'
+  | 'reconnecting'
   | 'connected'
   | 'elevated'
   | 'elevated-unverified'
@@ -127,6 +132,7 @@ export type SessionStatus =
 export type MainPortMessage =
   | { type: 'data'; data: string }
   | { type: 'status'; status: SessionStatus; detail?: string }
+  | { type: 'notice'; kind: 'reconnected' }
   | {
       type: 'hostkey'
       kind: 'unknown' | 'changed'
@@ -160,6 +166,25 @@ export interface TestConnectionResult {
   fingerprint?: string
   pinned: boolean
   message: string
+}
+
+// ---- file transfer (SFTP) -------------------------------------------------
+
+export interface RemoteEntry {
+  name: string
+  path: string
+  kind: 'file' | 'dir' | 'link'
+  size: number
+  modifiedAt: string
+  permissions: number
+  isSymlink: boolean
+}
+
+export interface TransferProgress {
+  currentFile: string
+  transferred: number
+  total: number
+  done: boolean
 }
 
 export interface ImportSummary {
@@ -221,6 +246,41 @@ export interface Bridge {
     receivedFingerprint: string
     confirmation: string
   }): Promise<void>
+
+  // ---- SFTP ---------------------------------------------------------------
+  sftpOpen(input: { serverId: string }): Promise<{ connectionId: string; homeDir: string }>
+  sftpClose(input: { connectionId: string }): Promise<void>
+  sftpList(input: { connectionId: string; dir: string }): Promise<RemoteEntry[]>
+  sftpMkdir(input: { connectionId: string; dir: string }): Promise<void>
+  sftpDelete(input: {
+    connectionId: string
+    target: string
+    kind: RemoteEntry['kind']
+  }): Promise<void>
+  /** Uploads picked local paths into the remote directory. */
+  sftpUpload(input: {
+    connectionId: string
+    remoteDir: string
+    localPaths: string[]
+  }): Promise<{ uploaded: number }>
+  /** Opens a native picker and uploads the chosen files/folders. */
+  sftpPickAndUpload(input: {
+    connectionId: string
+    remoteDir: string
+  }): Promise<{ ok: boolean; uploaded: number }>
+  /** Downloads remote entries into a user-chosen local folder. */
+  sftpDownload(input: {
+    connectionId: string
+    remotePaths: string[]
+    kinds: RemoteEntry['kind'][]
+  }): Promise<{ ok: boolean; downloaded: number; localDir?: string }>
+  /** Paths of files/folders dropped onto the window (absolute). */
+  resolveDroppedPaths(input: {
+    files: Array<{ path?: string }>
+  }): Promise<string[]>
+  onTransferProgress(cb: (p: TransferProgress) => void): () => void
+  /** Cancels the in-flight transfer on a connection, if any. */
+  sftpCancel(input: { connectionId: string }): Promise<void>
   onSessionPort(cb: (sessionId: string, port: SessionPort) => void): () => void
   onLocked(cb: () => void): () => void
 }
@@ -248,8 +308,20 @@ export const BRIDGE_CHANNELS = {
   sessionOpen: 'sessions:open',
   sessionClose: 'sessions:close',
   sessionTest: 'sessions:test',
-  hostkeyReplacePin: 'hostkeys:replace-pin'
+  hostkeyReplacePin: 'hostkeys:replace-pin',
+  sftpOpen: 'sftp:open',
+  sftpClose: 'sftp:close',
+  sftpList: 'sftp:list',
+  sftpMkdir: 'sftp:mkdir',
+  sftpDelete: 'sftp:delete',
+  sftpUpload: 'sftp:upload',
+  sftpPickAndUpload: 'sftp:pick-and-upload',
+  sftpDownload: 'sftp:download',
+  sftpCancel: 'sftp:cancel',
+  resolveDroppedPaths: 'app:resolve-dropped-paths'
 } as const satisfies Record<string, string>
+
+export const TRANSFER_PROGRESS_CHANNEL = 'transfer:progress'
 
 export const SESSION_PORT_CHANNEL = 'session-port'
 export const VAULT_LOCKED_CHANNEL = 'vault:locked'

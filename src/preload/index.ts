@@ -2,9 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   BRIDGE_CHANNELS,
   SESSION_PORT_CHANNEL,
+  TRANSFER_PROGRESS_CHANNEL,
   VAULT_LOCKED_CHANNEL
 } from '@shared/types'
-import type { Bridge, MainPortMessage, SessionPort } from '@shared/types'
+import type { Bridge, MainPortMessage, SessionPort, TransferProgress } from '@shared/types'
 
 /**
  * The only bridge into the renderer: a narrow, typed API. No ipcRenderer
@@ -38,6 +39,23 @@ const api: Bridge = {
   sessionClose: (sessionId) => ipcRenderer.invoke(BRIDGE_CHANNELS.sessionClose, sessionId),
   sessionTest: (serverId) => ipcRenderer.invoke(BRIDGE_CHANNELS.sessionTest, serverId),
   hostkeyReplacePin: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.hostkeyReplacePin, input),
+
+  sftpOpen: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpOpen, input),
+  sftpClose: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpClose, input),
+  sftpList: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpList, input),
+  sftpMkdir: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpMkdir, input),
+  sftpDelete: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpDelete, input),
+  sftpUpload: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpUpload, input),
+  sftpPickAndUpload: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpPickAndUpload, input),
+  sftpDownload: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpDownload, input),
+  sftpCancel: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpCancel, input),
+  resolveDroppedPaths: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.resolveDroppedPaths, input),
+
+  onTransferProgress: (cb) => {
+    const handler = (_e: unknown, p: TransferProgress) => cb(p)
+    ipcRenderer.on(TRANSFER_PROGRESS_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(TRANSFER_PROGRESS_CHANNEL, handler)
+  },
 
   onSessionPort: (cb) => {
     const handler = (event: unknown, meta: { sessionId: string }) => {

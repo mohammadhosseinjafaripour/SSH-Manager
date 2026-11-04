@@ -24,6 +24,23 @@ import {
   serversToCsv
 } from './vault/transfer'
 import { ConnectionManager, testConnection } from './ssh/manager'
+import {
+  closeSftp,
+  downloadRemote,
+  listDir,
+  mkdir as sftpMkdir,
+  openSftp,
+  removeRemote,
+  uploadPaths,
+  type SftpHandle
+} from './ssh/sftp'
+import { TRANSFER_PROGRESS_CHANNEL } from '@shared/types'
+import type { RemoteEntry, TransferProgress } from '@shared/types'
+
+/** Live SFTP connections, keyed by the connection id handed to the renderer. */
+const sftpHandles = new Map<string, SftpHandle>()
+/** Set to request cancellation of the in-flight transfer, if any. */
+const transferSignals = new Map<string, { cancelled: boolean }>()
 
 /** Holds the file chosen in the import picker until it is applied or re-picked. */
 let pendingImport: { raw: string; format: 'encrypted' | 'csv' } | null = null
@@ -108,6 +125,143 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
   handle('vaultRestoreBackup', (input: { file: string; password: string }) =>
     store.restoreBackup(input.file, input.password)
   )
+
+  // ---- SFTP -----------------------------------------------------------------
+
+  const requireHandle = (connectionId: string): SftpHandle => {
+    const handle = sftpHandles.get(connectionId)
+    if (!handle) throw new Error('sftp-not-connected:open the Files panel again')
+    return handle
+  }
+
+  /** Streams progress to the renderer without blocking the transfer. */
+  const emitProgress = (event: Electron.IpcMainInvokeEvent) => (p: TransferProgress) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send(TRANSFER_PROGRESS_CHANNEL, p)
+    }
+  }
+
+  handle('sftpOpen', async (input: { serverId: string }) => {
+    const handle = await openSftp(input.serverId, store)
+    sftpHandles.set(handle.id, handle)
+    // `$HOME` is the natural starting point; fall back to / if realpath fails.
+    const homeDir = await new Promise<string>((resolve) => {
+      handle.sftp.realpath('.', (err, resolved) => resolve(err || !resolved ? '/' : resolved))
+    })
+    return { connectionId: handle.id, homeDir }
+  })
+
+  handle('sftpClose', (input: { connectionId: string }) => {
+    const handle = sftpHandles.get(input.connectionId)
+    if (handle) {
+      closeSftp(handle)
+      sftpHandles.delete(input.connectionId)
+    }
+  })
+
+  handle('sftpCancel', (input: { connectionId: string }) => {
+    const signal = transferSignals.get(input.connectionId)
+    if (signal) signal.cancelled = true
+  })
+
+  handle('sftpList', (input: { connectionId: string; dir: string }) =>
+    listDir(requireHandle(input.connectionId), input.dir)
+  )
+
+  handle('sftpMkdir', (input: { connectionId: string; dir: string }) =>
+    sftpMkdir(requireHandle(input.connectionId), input.dir)
+  )
+
+  handle('sftpDelete', (input: { connectionId: string; target: string; kind: RemoteEntry['kind'] }) =>
+    removeRemote(requireHandle(input.connectionId), input.target, input.kind)
+  )
+
+  handle(
+    'sftpUpload',
+    async (
+      input: { connectionId: string; remoteDir: string; localPaths: string[] },
+      event: Electron.IpcMainInvokeEvent
+    ) => {
+      const handle = requireHandle(input.connectionId)
+      const signal = { cancelled: false }
+      transferSignals.set(input.connectionId, signal)
+      try {
+        await uploadPaths(
+          handle,
+          input.localPaths,
+          input.remoteDir,
+          emitProgress(event),
+          signal
+        )
+      } finally {
+        transferSignals.delete(input.connectionId)
+      }
+      return { uploaded: input.localPaths.length }
+    }
+  )
+
+  handle(
+    'sftpPickAndUpload',
+    async (input: { connectionId: string; remoteDir: string }, event: Electron.IpcMainInvokeEvent) => {
+      const win = BrowserWindow.fromWebContents(event.sender)!
+      const picked = await dialog.showOpenDialog(win, {
+        title: 'Upload to server',
+        properties: ['openFile', 'openDirectory', 'multiSelections']
+      })
+      if (picked.canceled || picked.filePaths.length === 0) return { ok: false, uploaded: 0 }
+      const handle = requireHandle(input.connectionId)
+      const signal = { cancelled: false }
+      transferSignals.set(input.connectionId, signal)
+      try {
+        await uploadPaths(handle, picked.filePaths, input.remoteDir, emitProgress(event), signal)
+      } finally {
+        transferSignals.delete(input.connectionId)
+      }
+      return { ok: true, uploaded: picked.filePaths.length }
+    }
+  )
+
+  handle(
+    'sftpDownload',
+    async (
+      input: { connectionId: string; remotePaths: string[]; kinds: RemoteEntry['kind'][] },
+      event: Electron.IpcMainInvokeEvent
+    ) => {
+      const win = BrowserWindow.fromWebContents(event.sender)!
+      const picked = await dialog.showOpenDialog(win, {
+        title: 'Choose where to save',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      const localDir = picked.filePaths[0]
+      if (picked.canceled || !localDir) return { ok: false, downloaded: 0 }
+
+      const handle = requireHandle(input.connectionId)
+      const signal = { cancelled: false }
+      transferSignals.set(input.connectionId, signal)
+      try {
+        for (let i = 0; i < input.remotePaths.length; i++) {
+          await downloadRemote(
+            handle,
+            input.remotePaths[i],
+            localDir,
+            input.kinds[i] ?? 'file',
+            emitProgress(event),
+            signal
+          )
+        }
+      } finally {
+        transferSignals.delete(input.connectionId)
+      }
+      return { ok: true, downloaded: input.remotePaths.length, localDir }
+    }
+  )
+
+  handle('resolveDroppedPaths', (input: { files: Array<{ path?: string }> }) => {
+    // Electron hands dropped files as objects with an absolute `path`.
+    return (input?.files ?? [])
+      .map((f) => f?.path)
+      .filter((p): p is string => typeof p === 'string')
+  })
 
   // ---- import / export ------------------------------------------------------
 

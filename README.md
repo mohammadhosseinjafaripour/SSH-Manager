@@ -57,6 +57,19 @@ npm run dev:ui     # serves the renderer at http://localhost:5188
   alive, reconnecting requires the master password. `Ctrl+Shift+L` locks immediately.
 - **Keyboard-interactive auth** — hidden `Password:` prompts are auto-answered; OTP/2FA
   challenges appear in a dialog honoring each prompt's echo flag.
+- **Sessions that survive being away** — SSH keepalives plus a `TMOUT` reset keep idle
+  sessions alive through NAT/firewall timeouts, and if a link really dies the session
+  **reconnects automatically** with exponential backoff (1s → 30s, forever) while keeping
+  the tab and all previous output on screen.
+- **File transfer (SFTP)** — the **Files** button next to your tabs opens a remote file
+  browser: drag & drop files *or whole folders* onto the panel (or the terminal), download
+  the other way, create folders, and delete. Transfers show live progress, run over their
+  own SSH connection so they never slow down your shell, and stay inside the same
+  host-key verification as the terminal. See [File transfer](#file-transfer-sftp).
+- **Clipboard done properly** — `Ctrl+Shift+C` copies the selection, `Ctrl+Shift+V` pastes
+  (with bracketed paste so multi-line commands don't fire line by line), `Ctrl+Insert` /
+  `Shift+Insert` also work, and right-click copies when there's a selection or pastes when
+  there isn't. Plain `Ctrl+C` still sends SIGINT to the remote shell.
 - Dark/light/system themes, durable vault writes with two backup generations.
 - **Batch import / export** — move every server to a new machine in two clicks
   (see below).
@@ -85,6 +98,41 @@ Settings → **Move your servers**:
 Typical migration: on the old machine → *Encrypted export*; on the new machine →
 create a vault, *Import file…*, enter the export password, Merge. Done.
 
+## File transfer (SFTP)
+
+Open a session, then click **Files** in the tab bar. The panel starts in your home
+directory and gives you:
+
+- **Drag & drop** — drop files *or folders* onto the panel (or onto the terminal itself)
+  to upload them into the directory you're viewing. Recursive folder upload preserves the
+  tree.
+- **Upload** — native picker for files and folders.
+- **Download** — tick one or more entries and choose a local destination folder; folders
+  are downloaded recursively.
+- **New folder**, **delete** (recursive, with confirmation), sorting by name/size/date,
+  and a path bar you can type into.
+
+Transfers stream in 32 KB chunks with 16-way concurrency and report live progress, so
+multi-GB uploads don't exhaust memory. A separate SSH connection is opened for SFTP, so a
+large transfer never competes with your interactive shell for window space. The host key
+is checked against the same pin as the terminal, and a **changed** key is refused.
+
+## Staying connected
+
+Servers that drop you after a few idle minutes are handled in three layers:
+
+1. **SSH keepalives** every 15s, tolerating 20 missed replies (≈5 minutes) — keeps NAT and
+   firewall state alive, and survives short laptop sleeps or VPN blips.
+2. **`TMOUT=0`** is sent right after login, which defeats the common
+   `/etc/profile`-style idle logout and `bash`'s `TMOUT`.
+3. **Auto-reconnect** — if the connection still dies, the tab reconnects with backoff
+   (1s, 2s, 5s, 10s, 20s, then every 30s, indefinitely) and keeps all previous output. Root
+   elevation is re-established automatically.
+
+Both keepalives and auto-reconnect can be turned off in **Settings → Connection**. Sessions
+you close yourself never reconnect, and a rejected password is never retried (that would
+feed account-lockout counters).
+
 ## Keyboard shortcuts
 
 Inside the terminal app shortcuts use `Ctrl+Shift+*` so plain `Ctrl+L`, `Ctrl+W`, `Ctrl+N`
@@ -97,8 +145,9 @@ always reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 | Search | `Ctrl+Shift+F` (plain `Ctrl+F` outside terminal) |
 | New server | `Ctrl+Shift+N` (plain `Ctrl+N` outside terminal) |
 | Cycle tabs | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Copy in terminal | select text, or `Ctrl+Shift+C` |
-| Paste in terminal | right-click or `Ctrl+Shift+V` |
+| Copy in terminal | select text (auto-copies), `Ctrl+Shift+C`, or `Ctrl+Insert` |
+| Paste in terminal | `Ctrl+Shift+V` or `Shift+Insert`; right-click pastes when nothing is selected |
+| Files panel | **Files** button in the tab bar |
 
 ## Security design
 

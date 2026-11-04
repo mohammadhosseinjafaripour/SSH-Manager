@@ -42,6 +42,9 @@ function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
     case 'status':
       useSessions.getState().setStatus(sessionId, msg.status, msg.detail)
       return
+    case 'notice':
+      useSessions.getState().pushNotice(sessionId)
+      return
     case 'hostkey': {
       const tab = useSessions.getState().tabs.find((t) => t.sessionId === sessionId)
       const server = tab ? serverById(tab.serverId) : undefined
@@ -78,6 +81,7 @@ interface SessionsState {
   cycle: (direction: 1 | -1) => void
   closeTab: (sessionId: string) => void
   setStatus: (sessionId: string, status: SessionStatus, detail?: string) => void
+  pushNotice: (sessionId: string) => void
   registerPort: (sessionId: string, port: SessionPort) => void
   reconnect: (sessionId: string) => Promise<void>
 }
@@ -139,6 +143,11 @@ export const useSessions = create<SessionsState>((set, get) => ({
       const ui = useUi.getState()
       if (ui.ki?.sessionId === sessionId) ui.closeKi()
     }
+  },
+
+  pushNotice: (sessionId) => {
+    const w = terminalWriters.get(sessionId)
+    w?.('\r\n\x1b[38;5;42m● connection restored — previous output kept above\x1b[0m\r\n')
   },
 
   registerPort: (sessionId, port) => {

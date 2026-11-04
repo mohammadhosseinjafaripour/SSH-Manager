@@ -58,7 +58,7 @@ function defaultPayload(): VaultPayload {
     servers: [],
     pinnedHostKeys: [],
     hostKeyHistory: [],
-    settings: { idleLockMinutes: 10, theme: 'dark' }
+    settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true }
   }
 }
 
@@ -237,6 +237,8 @@ export class VaultStore {
         p.settings.idleLockMinutes = mins
       }
       if (patch.theme !== undefined) p.settings.theme = patch.theme
+      if (patch.keepAlive !== undefined) p.settings.keepAlive = !!patch.keepAlive
+      if (patch.autoReconnect !== undefined) p.settings.autoReconnect = !!patch.autoReconnect
       return p.settings
     })
   }
