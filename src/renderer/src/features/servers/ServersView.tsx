@@ -1,10 +1,21 @@
 import { useMemo } from 'react'
-import { ArrowRight, ArrowUpFromLine, Pencil, Play, Plus, Search, Server, Trash2, X } from 'lucide-react'
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpFromLine,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Server,
+  Trash2,
+  X
+} from 'lucide-react'
 import type { ServerView } from '@shared/types'
 import { Button, IconButton, StatusDot, Tag } from '../../components/ui'
 import { relativeTime } from '../../lib/format'
 import { useSessions } from '../../stores/sessions'
-import { useUi } from '../../stores/ui'
+import { useUi, type HealthState } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 
 function matches(server: ServerView, query: string, tag: string | null): boolean {
@@ -25,6 +36,28 @@ export function ServersView() {
   const open = useSessions((s) => s.open)
   const select = useSessions((s) => s.select)
   const tabs = useSessions((s) => s.tabs)
+  const health = useUi((s) => s.health)
+  const setHealth = useUi((s) => s.setHealth)
+
+  /** Probes every server in parallel (main process bounds concurrency to 8). */
+  const checkHealth = async () => {
+    if (health.running || servers.length === 0) return
+    setHealth({ ...health, running: true })
+    try {
+      const results = await window.sshvault.healthCheck({
+        serverIds: servers.map((s) => s.id)
+      })
+      const map: HealthState['results'] = {}
+      for (const r of results) {
+        map[r.serverId] = { status: r.status, latencyMs: r.latencyMs, detail: r.detail }
+      }
+      setHealth({ running: false, checkedAt: new Date().toISOString(), results: map })
+    } catch {
+      setHealth({ ...health, running: false })
+    }
+  }
+
+  const healthFor = (id: string) => health.results[id]
 
   const filtered = useMemo(
     () => servers.filter((s) => matches(s, search.trim(), activeTag)),
@@ -73,7 +106,23 @@ export function ServersView() {
             </kbd>
           )}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {health.checkedAt && (
+            <span className="hidden text-[11.5px] text-faint sm:inline">
+              checked {relativeTime(health.checkedAt)}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void checkHealth()}
+            loading={health.running}
+            disabled={servers.length === 0}
+            title="Test every server at once"
+          >
+            <Activity size={14} />
+            {health.running ? 'Checking…' : 'Check all'}
+          </Button>
           <Button size="sm" onClick={() => openServerForm(null)}>
             <Plus size={15} />
             Add server
@@ -123,6 +172,27 @@ export function ServersView() {
                             Live
                           </span>
                         )}
+                        {(() => {
+                          const h = healthFor(server.id)
+                          if (!h) return null
+                          const meta =
+                            h.status === 'online'
+                              ? { color: 'var(--ok)', label: h.latencyMs ? `${h.latencyMs}ms` : 'up' }
+                              : h.status === 'auth-failed'
+                                ? { color: 'var(--warn)', label: 'auth failed' }
+                                : h.status === 'hostkey-changed'
+                                  ? { color: 'var(--danger)', label: 'key changed' }
+                                  : { color: 'var(--danger)', label: 'down' }
+                          return (
+                            <span
+                              className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-inset px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted"
+                              title={h.detail ?? meta.label}
+                            >
+                              <StatusDot color={meta.color} />
+                              {meta.label}
+                            </span>
+                          )
+                        })()}
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[12px] text-muted/90">
                         {server.username}@{server.host}

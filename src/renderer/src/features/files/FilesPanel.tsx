@@ -8,14 +8,18 @@ import {
   FolderPlus,
   Home,
   Loader2,
+  Pencil,
   RefreshCw,
+  Shield,
   Trash2,
   Upload,
   X
 } from 'lucide-react'
-import type { RemoteEntry, TransferProgress } from '@shared/types'
-import { Button, IconButton } from '../../components/ui'
+import type { ConflictPolicy, RemoteEntry, TransferProgress } from '@shared/types'
+import { Button, IconButton, Select } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
+import { ChmodDialog, RenameDialog } from './RenameDialog'
+import { octalToRwx } from './mode-utils'
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -55,6 +59,11 @@ export function FilesPanel({
   const [dragOver, setDragOver] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
+  const [renameTarget, setRenameTarget] = useState<RemoteEntry | null>(null)
+  const [chmodTarget, setChmodTarget] = useState<RemoteEntry | null>(null)
+  const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('overwrite')
+  const [pendingUpload, setPendingUpload] = useState<{ localPaths: string[] } | null>(null)
+  const [conflicts, setConflicts] = useState<string[]>([])
   const dragDepth = useRef(0)
 
   // ---- connect + navigate --------------------------------------------------
@@ -157,7 +166,11 @@ export function FilesPanel({
     setBusy(true)
     setError(null)
     try {
-      const r = await window.sshvault.sftpPickAndUpload({ connectionId, remoteDir: cwd })
+      const r = await window.sshvault.sftpPickAndUpload({
+        connectionId,
+        remoteDir: cwd,
+        conflictPolicy
+      })
       if (r.ok) await refresh(cwd)
     } catch (err) {
       setError(friendlyError(err))
@@ -172,7 +185,62 @@ export function FilesPanel({
     setBusy(true)
     setError(null)
     try {
-      await window.sshvault.sftpUpload({ connectionId, remoteDir: cwd, localPaths })
+      await window.sshvault.sftpUpload({
+        connectionId,
+        remoteDir: cwd,
+        localPaths,
+        conflictPolicy
+      })
+      await refresh(cwd)
+    } catch (err) {
+      setError(friendlyError(err))
+    } finally {
+      setBusy(false)
+      setProgress(null)
+    }
+  }
+
+  /**
+   * Before uploading dropped items, ask the server which names already exist.
+   * If any do, show the conflict prompt instead of silently overwriting.
+   * (The native picker resolves its file list inside the main process, so it
+   * uses the policy currently selected in the toolbar.)
+   */
+  const beginDrop = async (localPaths: string[], names: string[]) => {
+    if (!connectionId || busy) return
+    try {
+      const { existing } = await window.sshvault.sftpCheckConflicts({
+        connectionId,
+        remoteDir: cwd,
+        names
+      })
+      if (existing.length === 0) {
+        await uploadDropped(localPaths)
+        return
+      }
+      setConflicts(existing)
+      setPendingUpload({ localPaths })
+    } catch {
+      // Conflict probing is best-effort: fall through to a normal upload.
+      await uploadDropped(localPaths)
+    }
+  }
+
+  const resolveConflict = async (policy: ConflictPolicy) => {
+    setConflictPolicy(policy)
+    const intent = pendingUpload
+    setPendingUpload(null)
+    setConflicts([])
+    if (!intent) return
+    setBusy(true)
+    setError(null)
+    try {
+      await window.sshvault.sftpUpload({
+        connectionId: connectionId!,
+        remoteDir: cwd,
+        localPaths: intent.localPaths,
+        conflictPolicy: policy
+      })
       await refresh(cwd)
     } catch (err) {
       setError(friendlyError(err))
@@ -261,7 +329,11 @@ export function FilesPanel({
     const paths = await window.sshvault.resolveDroppedPaths({
       files: files.map((f) => ({ path: (f as File & { path?: string }).path }))
     })
-    await uploadDropped(paths)
+    // Names are known for dropped items, so we can detect conflicts precisely.
+    await beginDrop(
+      paths,
+      files.map((f) => f.name)
+    )
   }
 
   // ---- rendering -----------------------------------------------------------
@@ -354,6 +426,16 @@ export function FilesPanel({
           aria-label="Remote path"
           className="h-7 min-w-0 flex-1 rounded-md border border-line bg-inset px-2 font-mono text-[11.5px] text-fg focus:border-accent"
         />
+        <Select
+          ariaLabel="Upload conflict policy"
+          value={conflictPolicy}
+          onValueChange={(v) => setConflictPolicy(v as ConflictPolicy)}
+          options={[
+            { value: 'overwrite', label: 'Overwrite' },
+            { value: 'rename', label: 'Keep both' },
+            { value: 'skip', label: 'Skip existing' }
+          ]}
+        />
         <Button size="sm" variant="secondary" onClick={() => void uploadPicked()} loading={busy}>
           <Upload size={13} />
           Upload
@@ -404,6 +486,32 @@ export function FilesPanel({
         <div className="flex shrink-0 items-center gap-2 border-b border-line-soft bg-panel-2 px-3 py-1.5">
           <span className="text-[11.5px] text-muted">{selected.size} selected</span>
           <div className="ml-auto flex gap-1.5">
+            {selected.size === 1 && (
+              <>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const only = entries.find((e) => selected.has(e.path))
+                    if (only) setRenameTarget(only)
+                  }}
+                >
+                  <Pencil size={12} />
+                  Rename
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const only = entries.find((e) => selected.has(e.path))
+                    if (only) setChmodTarget(only)
+                  }}
+                >
+                  <Shield size={12} />
+                  Permissions
+                </Button>
+              </>
+            )}
             <Button size="sm" variant="secondary" onClick={() => void downloadSelected()} loading={busy}>
               <Download size={12} />
               Download
@@ -420,6 +528,9 @@ export function FilesPanel({
       <div className="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-1.5">
         <span className="w-4" />
         <span className="flex-1">{header('name', 'Name')}</span>
+        <span className="w-20 text-right font-mono text-[11px] font-semibold uppercase tracking-wider text-faint">
+          Mode
+        </span>
         <span className="w-16 text-right">{header('size', 'Size')}</span>
         <span className="w-24 text-right">{header('modifiedAt', 'Modified')}</span>
       </div>
@@ -477,6 +588,12 @@ export function FilesPanel({
                       <FileIcon size={14} className="shrink-0 text-faint" />
                     )}
                     <span className="flex-1 truncate">{entry.name}</span>
+                    <span
+                      className="w-20 shrink-0 text-right font-mono text-[10.5px] text-faint"
+                      title={`chmod ${(entry.permissions & 0o777).toString(8).padStart(3, '0')}`}
+                    >
+                      {octalToRwx(entry.permissions)}
+                    </span>
                     <span className="w-16 shrink-0 text-right tabular-nums text-faint">
                       {entry.kind === 'dir' ? '—' : formatBytes(entry.size)}
                     </span>
@@ -501,6 +618,57 @@ export function FilesPanel({
           {entries.length} item{entries.length === 1 ? '' : 's'}
         </span>
       </div>
+
+      {/* upload conflict prompt */}
+      {pendingUpload && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg/85 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-sm rounded-xl border border-line bg-panel p-5 shadow-2xl">
+            <div className="mb-1 flex items-center gap-2">
+              <AlertCircle size={16} className="text-warn" />
+              <h3 className="text-[13.5px] font-semibold text-fg">
+                {conflicts.length} file{conflicts.length === 1 ? '' : 's'} already exist
+              </h3>
+            </div>
+            <p className="mb-3 max-h-24 overflow-y-auto text-[12px] leading-relaxed text-muted">
+              {conflicts.slice(0, 6).join(', ')}
+              {conflicts.length > 6 ? ` and ${conflicts.length - 6} more` : ''}
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <Button size="sm" onClick={() => void resolveConflict('overwrite')}>
+                Overwrite existing files
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void resolveConflict('rename')}>
+                Keep both (rename new copies)
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void resolveConflict('skip')}>
+                Skip files that exist
+              </Button>
+            </div>
+            <button
+              onClick={() => {
+                setPendingUpload(null)
+                setConflicts([])
+              }}
+              className="mt-3 w-full text-center text-[11.5px] text-faint hover:text-muted"
+            >
+              Cancel upload
+            </button>
+          </div>
+        </div>
+      )}
+
+      <RenameDialog
+        entry={renameTarget}
+        connectionId={connectionId ?? ''}
+        onClose={() => setRenameTarget(null)}
+        onDone={() => void refresh(cwd)}
+      />
+      <ChmodDialog
+        entry={chmodTarget}
+        connectionId={connectionId ?? ''}
+        onClose={() => setChmodTarget(null)}
+        onDone={() => void refresh(cwd)}
+      />
 
       {/* drag overlay */}
       {dragOver && (

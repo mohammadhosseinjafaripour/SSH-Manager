@@ -37,7 +37,8 @@ function makeServer(over: Partial<ServerEntry> = {}): ServerEntry {
     port: over.port ?? 22,
     username: over.username ?? 'deploy',
     password: over.password ?? 'secret-one',
-    authMethod: 'password',
+    authMethod: over.authMethod ?? 'password',
+    keyAuth: over.keyAuth ?? null,
     tags: over.tags ?? ['prod'],
     notes: over.notes ?? '',
     elevate: over.elevate ?? {

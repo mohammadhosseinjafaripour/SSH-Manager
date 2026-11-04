@@ -41,7 +41,11 @@ export const serverFormSchema = z.object({
   host: z.string().trim().min(1, 'Host is required').max(255),
   port: z.coerce.number().int().min(1, 'Invalid port').max(65535, 'Invalid port'),
   username: z.string().trim().min(1, 'Username is required').max(32),
+  authMethod: z.enum(['password', 'key', 'agent']).default('password'),
   password: z.string().max(128).default(''),
+  /** Pasted private key (PEM or OpenSSH). Empty on edit = keep the stored key. */
+  privateKey: z.string().max(16_384).default(''),
+  keyPassphrase: z.string().max(256).default(''),
   tags: z.array(z.string().max(24)).max(12).default([]),
   notes: z.string().max(2000).default(''),
   elevate: elevateSchema
@@ -88,6 +92,21 @@ export function masterPasswordIssues(pw: string): string[] {
  */
 const GENERATOR_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#%*+=?-_'
+
+/**
+ * Client-side sanity check for a pasted private key, mirroring the main
+ * process. Gives an immediate error instead of a confusing handshake failure.
+ */
+export function looksLikePrivateKey(text: string): boolean {
+  const t = text.trim()
+  if (t.length < 100) return false
+  return /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(t) && /-----END [A-Z ]*PRIVATE KEY-----/.test(t)
+}
+
+export function privateKeyKind(text: string): string | null {
+  const m = text.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----/)
+  return m ? m[1] : null
+}
 
 export function generatePassword(length = 20): string {
   const chars: string[] = []

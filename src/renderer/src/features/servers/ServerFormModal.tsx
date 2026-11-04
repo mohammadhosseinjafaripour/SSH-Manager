@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useForm, type Resolver, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowUpRight, ShieldCheck, Zap } from 'lucide-react'
-import { serverFormSchema, type ServerFormValues } from '@shared/schemas'
+import { looksLikePrivateKey, privateKeyKind, serverFormSchema, type ServerFormValues } from '@shared/schemas'
 import type { ServerUpsertInput, ServerView, TestConnectionResult } from '@shared/types'
 import { Button, Dialog, Field, Input, PasswordInput, Select, Switch } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
@@ -23,7 +23,10 @@ function toFormValues(server: ServerView | null): ServerFormValues {
       host: '',
       port: 22,
       username: '',
+      authMethod: 'password',
       password: '',
+      privateKey: '',
+      keyPassphrase: '',
       tags: [],
       notes: '',
       elevate: { enabled: false, preset: 'sudo -s', customCommand: '', passwordMode: 'same', customPassword: '' }
@@ -34,7 +37,10 @@ function toFormValues(server: ServerView | null): ServerFormValues {
     host: server.host,
     port: server.port,
     username: server.username,
+    authMethod: server.authMethod ?? 'password',
     password: '',
+    privateKey: '',
+    keyPassphrase: '',
     tags: server.tags,
     notes: server.notes,
     elevate: {
@@ -74,12 +80,28 @@ export function ServerFormModal() {
   const elevateEnabled = watched.elevate?.enabled
   const preset = watched.elevate?.preset
   const passwordMode = watched.elevate?.passwordMode
+  const authMethod = watched.authMethod
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
-    // Create-mode-only secret requirements; in edit mode empty means "keep
-    // the stored value" (enforced by the main process).
-    if (!editing && !values.password) {
+    // Credential requirements depend on the auth method. In edit mode an empty
+    // secret means "keep the stored value" (the main process enforces that).
+    if (values.authMethod === 'key') {
+      if (values.privateKey && !looksLikePrivateKey(values.privateKey)) {
+        form.setError('privateKey', {
+          message: 'This does not look like a private key (expected a BEGIN … PRIVATE KEY block)'
+        })
+        return
+      }
+      if (!editing && !values.privateKey) {
+        form.setError('privateKey', { message: 'Paste or load a private key' })
+        return
+      }
+      if (editing && !values.privateKey && !editing.hasKey) {
+        form.setError('privateKey', { message: 'This server has no stored key — add one' })
+        return
+      }
+    } else if (!editing && values.authMethod === 'password' && !values.password) {
       form.setError('password', { message: 'Password is required for a new server' })
       return
     }
@@ -93,6 +115,13 @@ export function ServerFormModal() {
       host: values.host,
       port: values.port,
       username: values.username,
+      authMethod: values.authMethod,
+      ...(values.authMethod === 'key'
+        ? {
+            privateKey: values.privateKey || undefined,
+            keyPassphrase: values.keyPassphrase || undefined
+          }
+        : {}),
       tags: tagsText
         .split(',')
         .map((t) => t.trim())
@@ -158,13 +187,92 @@ export function ServerFormModal() {
           </Field>
         </div>
 
-        <Field
-          label="Password"
-          error={form.formState.errors.password?.message}
-          hint={editing ? 'Leave empty to keep the stored password' : undefined}
-        >
-          <PasswordInputWithForm form={form} />
+        <Field label="Authentication">
+          <Select
+            ariaLabel="Authentication method"
+            value={authMethod ?? 'password'}
+            onValueChange={(v) => form.setValue('authMethod', v as ServerFormValues['authMethod'])}
+            options={[
+              { value: 'password', label: 'Password' },
+              { value: 'key', label: 'Private key (PEM / OpenSSH)' },
+              { value: 'agent', label: 'SSH agent (SSH_AUTH_SOCK)' }
+            ]}
+          />
         </Field>
+
+        {authMethod === 'password' && (
+          <Field
+            label="Password"
+            error={form.formState.errors.password?.message}
+            hint={editing ? 'Leave empty to keep the stored password' : undefined}
+          >
+            <PasswordInputWithForm form={form} />
+          </Field>
+        )}
+
+        {authMethod === 'key' && (
+          <div className="flex flex-col gap-3 rounded-xl border border-line bg-inset p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-medium text-fg">Private key</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  const picked = await window.sshvault.pickKeyFile()
+                  if (picked.ok && picked.contents) {
+                    form.setValue('privateKey', picked.contents)
+                    form.setError('privateKey', { message: '' })
+                  }
+                }}
+                className="text-[12px] font-medium text-accent transition-colors duration-150 hover:underline"
+              >
+                Load from file…
+              </button>
+            </div>
+            <textarea
+              value={form.watch('privateKey') ?? ''}
+              onChange={(e) => form.setValue('privateKey', e.target.value)}
+              placeholder={
+                editing?.hasKey
+                  ? `Key already stored${editing.hasKeyPassphrase ? ' (passphrase protected)' : ''} — leave empty to keep it`
+                  : '-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END OPENSSH PRIVATE KEY-----'
+              }
+              spellCheck={false}
+              rows={5}
+              className="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 font-mono text-[11.5px] text-fg placeholder:text-faint focus:border-accent"
+            />
+            {form.formState.errors.privateKey?.message && (
+              <p className="text-[12px] text-danger">{form.formState.errors.privateKey.message}</p>
+            )}
+            {(() => {
+              const key = form.watch('privateKey') ?? ''
+              if (!key) return null
+              const kind = privateKeyKind(key)
+              return (
+                <p className={`text-[11.5px] ${kind ? 'text-ok' : 'text-warn'}`}>
+                  {kind ? `Recognized ${kind}` : 'Waiting for a complete key block…'}
+                </p>
+              )
+            })()}
+            <Field label="Key passphrase (if any)">
+              <PasswordInput
+                value={form.watch('keyPassphrase') ?? ''}
+                onChange={(v) => form.setValue('keyPassphrase', v)}
+                placeholder="Only if your key is encrypted"
+              />
+            </Field>
+            <p className="text-[11.5px] leading-relaxed text-faint">
+              The key is stored encrypted inside the vault and only ever used from the main
+              process.
+            </p>
+          </div>
+        )}
+
+        {authMethod === 'agent' && (
+          <p className="rounded-lg border border-line bg-inset px-3 py-2.5 text-[12px] leading-relaxed text-muted">
+            Uses the keys already loaded in your SSH agent (Windows OpenSSH agent or Pageant).
+            No secret is stored in the vault for this server.
+          </p>
+        )}
 
         <Field label="Tags" hint="Comma-separated, e.g. production, web">
           <Input value={tagsText} onChange={(e) => setTagsText(e.target.value)} placeholder="production, web" />

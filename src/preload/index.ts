@@ -49,6 +49,11 @@ const api: Bridge = {
   sftpPickAndUpload: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpPickAndUpload, input),
   sftpDownload: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpDownload, input),
   sftpCancel: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpCancel, input),
+  sftpCheckConflicts: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpCheckConflicts, input),
+  sftpRename: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpRename, input),
+  sftpChmod: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpChmod, input),
+  healthCheck: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.healthCheck, input),
+  pickKeyFile: () => ipcRenderer.invoke(BRIDGE_CHANNELS.pickKeyFile),
   resolveDroppedPaths: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.resolveDroppedPaths, input),
 
   onTransferProgress: (cb) => {

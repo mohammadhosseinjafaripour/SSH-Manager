@@ -5,6 +5,7 @@ import { MessagePortMain } from 'electron'
 import type { MainPortMessage, RendererPortMessage, ServerEntry, SessionStatus } from '@shared/types'
 import type { VaultStore } from '../vault/store'
 import { checkPin, fingerprintOf } from '../hostkeys/verifier'
+import { authConfig } from './auth'
 import { ElevateDetector, buildElevateLine, makeNonce } from './elevate'
 
 const READY_TIMEOUT_MS = 20_000
@@ -74,7 +75,7 @@ export class SshSession {
 
   /** (Re)establish the SSH connection. Safe to call for the first attempt or a retry. */
   private connect(): void {
-    const { host, port, username, password } = this.opts.server
+    const { host, port, username } = this.opts.server
     this.clearReconnectTimer()
     const conn = (this.conn = new Client())
 
@@ -88,11 +89,19 @@ export class SshSession {
     const keepAlive = this.settingOn('keepAlive')
     // Host key is verified BEFORE authentication: the password is never sent
     // to a host whose key is unknown-to-the-user or has changed.
+    let auth: ReturnType<typeof authConfig>
+    try {
+      auth = authConfig(this.opts.server)
+    } catch (err) {
+      this.fail('auth-failed', err instanceof Error ? err.message : 'Missing credentials')
+      return
+    }
+
     conn.connect({
       host,
       port,
       username,
-      password,
+      ...auth,
       tryKeyboard: true,
       readyTimeout: READY_TIMEOUT_MS,
       ...(keepAlive

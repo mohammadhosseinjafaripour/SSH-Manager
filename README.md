@@ -57,6 +57,17 @@ npm run dev:ui     # serves the renderer at http://localhost:5188
   alive, reconnecting requires the master password. `Ctrl+Shift+L` locks immediately.
 - **Keyboard-interactive auth** — hidden `Password:` prompts are auto-answered; OTP/2FA
   challenges appear in a dialog honoring each prompt's echo flag.
+- **SSH key authentication** — password, private key (PEM/OpenSSH, optional passphrase),
+  or your system SSH agent. Keys are pasted, loaded from a file, and stored encrypted in
+  the vault; they never leave the main process.
+- **Terminal search** — `Ctrl+Shift+F` (or the magnifier in the tab bar) searches the full
+  scrollback with match-case and whole-word toggles and a live match counter.
+- **Bulk health check** — **Check all** probes every server in parallel (8 at a time) and
+  shows a latency pill per row (`18ms`), `auth failed`, `down`, or `key changed`.
+- **Upload conflict handling** — choose *overwrite*, *keep both* (auto-renames), or *skip*,
+  both in the toolbar and in a prompt when a drop collides with existing files.
+- **Rename & chmod** — rename files and folders from the Files panel and edit permissions
+  with an owner/group/other checkbox grid (with the octal shown live).
 - **Sessions that survive being away** — SSH keepalives plus a `TMOUT` reset keep idle
   sessions alive through NAT/firewall timeouts, and if a link really dies the session
   **reconnects automatically** with exponential backoff (1s → 30s, forever) while keeping
@@ -109,8 +120,11 @@ directory and gives you:
 - **Upload** — native picker for files and folders.
 - **Download** — tick one or more entries and choose a local destination folder; folders
   are downloaded recursively.
-- **New folder**, **delete** (recursive, with confirmation), sorting by name/size/date,
-  and a path bar you can type into.
+- **New folder**, **rename**, **chmod** (permission grid), **delete** (recursive, with
+  confirmation), sorting by name/size/date, a mode column (`rw-r--r--`), and a path bar
+  you can type into.
+- **Conflict handling** — pick overwrite / keep both / skip in the toolbar, or answer a
+  prompt when a drop collides with files that already exist.
 
 Transfers stream in 32 KB chunks with 16-way concurrency and report live progress, so
 multi-GB uploads don't exhaust memory. A separate SSH connection is opened for SFTP, so a
@@ -148,6 +162,7 @@ always reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 | Copy in terminal | select text (auto-copies), `Ctrl+Shift+C`, or `Ctrl+Insert` |
 | Paste in terminal | `Ctrl+Shift+V` or `Shift+Insert`; right-click pastes when nothing is selected |
 | Files panel | **Files** button in the tab bar |
+| Find in terminal | `Ctrl+Shift+F` or the magnifier in the tab bar |
 
 ## Security design
 

@@ -40,6 +40,7 @@ const defaultState: MockState = {
 function seedServers(): ServerEntry[] {
   const base = {
     authMethod: 'password' as const,
+    keyAuth: null,
     notes: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -89,9 +90,12 @@ function save(): void {
 }
 
 function toView(entry: ServerEntry) {
-  const { password: _password, elevate, ...rest } = entry
+  const { password: _password, keyAuth, elevate, ...rest } = entry
   return {
     ...rest,
+    authMethod: entry.authMethod ?? 'password',
+    hasKey: !!keyAuth?.privateKey,
+    hasKeyPassphrase: !!keyAuth?.passphrase,
     elevate: {
       enabled: elevate.enabled,
       preset: elevate.preset,
@@ -366,6 +370,7 @@ export function createMockBridge(): Bridge {
             username: cells[3] ?? 'root',
             password: cells[4] ?? '',
             authMethod: 'password' as const,
+            keyAuth: null,
             tags: (cells[5] ?? '').split(';').filter(Boolean),
             notes: cells[6] ?? '',
             elevate: { enabled: (cells[7] ?? 'no') === 'yes', preset: (cells[8] as never) ?? 'sudo -s', customCommand: '', passwordMode: 'same' as const, customPassword: '' },
@@ -493,6 +498,45 @@ export function createMockBridge(): Bridge {
     sftpPickAndUpload: async () => ({ ok: false, uploaded: 0 }),
     sftpDownload: async () => ({ ok: false, downloaded: 0 }),
     sftpCancel: async () => undefined,
+    sftpCheckConflicts: async ({ remoteDir, names }) => {
+      const tree = [...mockSftp.values()][0]
+      const present = (tree?.[remoteDir] ?? []).map((e) => e.name)
+      return { existing: names.filter((n) => present.includes(n)) }
+    },
+    sftpRename: async ({ from, to }) => {
+      const tree = [...mockSftp.values()][0]
+      if (!tree) return
+      const parent = from.slice(0, from.lastIndexOf('/')) || '/'
+      const list = tree[parent] ?? []
+      const entry = list.find((e) => `${parent.replace(/\/$/, '')}/${e.name}` === from)
+      if (entry) entry.name = to.slice(to.lastIndexOf('/') + 1)
+    },
+    sftpChmod: async ({ target, mode }) => {
+      const tree = [...mockSftp.values()][0]
+      if (!tree) return
+      const parent = target.slice(0, target.lastIndexOf('/')) || '/'
+      const entry = (tree[parent] ?? []).find(
+        (e) => `${parent.replace(/\/$/, '')}/${e.name}` === target
+      )
+      if (entry) entry.permissions = mode
+    },
+    pickKeyFile: async () =>
+      new Promise((resolve) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.onchange = async () => {
+          const f = input.files?.[0]
+          if (!f) return resolve({ ok: false })
+          resolve({ ok: true, contents: await f.text(), fileName: f.name })
+        }
+        input.click()
+      }),
+    healthCheck: async ({ serverIds }) =>
+      serverIds.map((id, i) => ({
+        serverId: id,
+        status: (i === 1 ? 'auth-failed' : 'online') as 'online' | 'auth-failed',
+        latencyMs: 18 + i * 27
+      })),
     resolveDroppedPaths: async ({ files }) =>
       (files ?? []).map((f) => f.path).filter((p): p is string => typeof p === 'string'),
     onTransferProgress: () => () => undefined,
@@ -523,7 +567,14 @@ function inputToEntry(input: ServerUpsertInput, existing?: ServerEntry, now?: st
     port: input.port,
     username: input.username,
     password: input.password ?? existing?.password ?? '',
-    authMethod: 'password',
+    authMethod: input.authMethod ?? existing?.authMethod ?? 'password',
+    keyAuth:
+      (input.authMethod ?? existing?.authMethod) === 'key'
+        ? {
+            privateKey: input.privateKey ?? existing?.keyAuth?.privateKey ?? '',
+            passphrase: input.keyPassphrase ?? existing?.keyAuth?.passphrase ?? ''
+          }
+        : null,
     tags: input.tags,
     notes: input.notes,
     elevate: {

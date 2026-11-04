@@ -21,6 +21,13 @@ export interface TransferState {
   mode: 'export' | 'import' | 'csv-export'
 }
 
+/** Health-check progress, kept outside the vault store (ephemeral). */
+export interface HealthState {
+  running: boolean
+  checkedAt: string | null
+  results: Record<string, { status: string; latencyMs?: number; detail?: string }>
+}
+
 interface UiState {
   search: string
   activeTag: string | null
@@ -32,6 +39,8 @@ interface UiState {
   transfer: TransferState | null
   hostkey: HostKeyDialogState | null
   ki: KiDialogState | null
+  health: HealthState
+  setHealth: (health: HealthState) => void
   setSearch: (search: string) => void
   setActiveTag: (tag: string | null) => void
   openServerForm: (editing: ServerView | null) => void
@@ -59,6 +68,8 @@ export const useUi = create<UiState>((set) => ({
   transfer: null,
   hostkey: null,
   ki: null,
+  health: { running: false, checkedAt: null, results: {} },
+  setHealth: (health) => set({ health }),
   setSearch: (search) => set({ search }),
   setActiveTag: (activeTag) => set({ activeTag }),
   openServerForm: (editing) => set({ serverFormOpen: true, editing }),

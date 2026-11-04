@@ -3,9 +3,10 @@ import { createReadStream, promises as fsp } from 'node:fs'
 import { basename, join, posix as pathPosix } from 'node:path'
 import { Client } from 'ssh2'
 import type { SFTPWrapper, FileEntryWithStats } from 'ssh2'
-import type { RemoteEntry, TransferProgress } from '@shared/types'
+import type { ConflictPolicy, RemoteEntry, TransferProgress } from '@shared/types'
 import type { VaultStore } from '../vault/store'
 import { checkPin, fingerprintOf } from '../hostkeys/verifier'
+import { authConfig } from './auth'
 
 /**
  * SFTP support: browse a remote directory, upload/download files and whole
@@ -81,7 +82,7 @@ export function openSftp(serverId: string, store: VaultStore): Promise<SftpHandl
       host: server.host,
       port: server.port,
       username: server.username,
-      password: server.password,
+      ...authConfig(server),
       tryKeyboard: true,
       readyTimeout: 20_000,
       hostVerifier: (key: Buffer, cb?: (ok: boolean) => void) => {
@@ -183,7 +184,8 @@ export async function uploadTree(
   localRoot: string,
   remoteParent: string,
   onProgress?: (p: TransferProgress) => void,
-  signal?: { cancelled: boolean }
+  signal?: { cancelled: boolean },
+  conflictPolicy: ConflictPolicy = 'overwrite'
 ): Promise<void> {
   const rootName = basename(localRoot)
   const remoteRoot = pathPosix.join(remoteParent, rootName)
@@ -223,9 +225,18 @@ export async function uploadTree(
         await copyTree(localPath, remotePath, depth + 1)
       } else if (item.isFile()) {
         current = item.name
+        let fileName = item.name
+        if (conflictPolicy !== 'overwrite') {
+          const [clash] = await existingNames(handle, remoteDir, [fileName])
+          if (clash) {
+            if (conflictPolicy === 'skip') continue
+            fileName = await freeName(handle, remoteDir, fileName)
+          }
+        }
+        const remoteFile = pathPosix.join(remoteDir, fileName)
         await new Promise<void>((resolve, reject) => {
           const read = createReadStream(localPath, { highWaterMark: HIGH_WATER_MARK })
-          const write = handle.sftp.createWriteStream(remotePath)
+          const write = handle.sftp.createWriteStream(remoteFile)
           write.on('close', () => resolve())
           write.on('error', (e: Error) => reject(new Error(`sftp-upload-failed:${e.message}`)))
           read.on('error', (e: Error) => reject(new Error(`sftp-upload-failed:${e.message}`)))
@@ -301,7 +312,8 @@ export async function uploadPaths(
   localPaths: ReadonlyArray<string>,
   remoteDir: string,
   onProgress?: (p: TransferProgress) => void,
-  signal?: { cancelled: boolean }
+  signal?: { cancelled: boolean },
+  conflictPolicy: ConflictPolicy = 'overwrite'
 ): Promise<void> {
   if (localPaths.length > MAX_DIR_ENTRIES) {
     throw new Error('sftp-upload-failed:too many items in one drop')
@@ -310,10 +322,19 @@ export async function uploadPaths(
     if (signal?.cancelled) throw new Error('cancelled')
     const stat = await fsp.stat(localPath)
     if (stat.isDirectory()) {
-      await uploadTree(handle, localPath, remoteDir, onProgress, signal)
+      await uploadTree(handle, localPath, remoteDir, onProgress, signal, conflictPolicy)
     } else if (stat.isFile()) {
+      let targetName = basename(localPath)
+      // Conflict policy applies per file so a mixed drop behaves predictably.
+      if (conflictPolicy !== 'overwrite') {
+        const [clash] = await existingNames(handle, remoteDir, [targetName])
+        if (clash) {
+          if (conflictPolicy === 'skip') continue
+          targetName = await freeName(handle, remoteDir, targetName)
+        }
+      }
       await new Promise<void>((resolve, reject) => {
-        const name = basename(localPath)
+        const name = targetName
         const remote = pathPosix.join(remoteDir, name)
         handle.sftp.fastPut(
           localPath,
@@ -335,4 +356,80 @@ export async function uploadPaths(
     }
   }
   onProgress?.({ currentFile: '', transferred: 0, total: 0, done: true })
+}
+
+/** Renames/moves a remote entry. */
+export function renameRemote(handle: SftpHandle, from: string, to: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    handle.sftp.rename(from, to, (err) =>
+      err ? reject(new Error(`sftp-rename-failed:${err.message}`)) : resolve()
+    )
+  })
+}
+
+/** Changes permissions (e.g. 0o644). Follows the same stat → chmod two-step. */
+export function chmodRemote(handle: SftpHandle, target: string, mode: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    handle.sftp.stat(target, (statErr, stats) => {
+      if (statErr || !stats) {
+        reject(new Error(`sftp-chmod-failed:${statErr?.message ?? 'stat failed'}`))
+        return
+      }
+      handle.sftp.chmod(target, mode, (err) =>
+        err ? reject(new Error(`sftp-chmod-failed:${err.message}`)) : resolve()
+      )
+    })
+  })
+}
+
+/**
+ * Which of `names` already exist in `remoteDir`? Used before an upload so the
+ * user can choose overwrite / keep both / skip instead of silently clobbering.
+ */
+export function existingNames(
+  handle: SftpHandle,
+  remoteDir: string,
+  names: ReadonlyArray<string>
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    const found: string[] = []
+    let pending = names.length
+    if (pending === 0) {
+      resolve(found)
+      return
+    }
+    for (const name of names) {
+      const full = pathPosix.join(remoteDir, name)
+      handle.sftp.stat(full, (err, stats) => {
+        if (!err && stats) found.push(name)
+        pending--
+        if (pending === 0) resolve(found)
+      })
+    }
+  })
+}
+
+/**
+ * Finds a free name by appending " (n)" before the extension, so a
+ * conflict-rename upload never overwrites anything.
+ */
+export function freeName(handle: SftpHandle, remoteDir: string, name: string): Promise<string> {
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
+  return new Promise((resolve) => {
+    let n = 1
+    const tryName = () => {
+      const candidate = `${stem} (${n})${ext}`
+      handle.sftp.stat(pathPosix.join(remoteDir, candidate), (err, stats) => {
+        if (err || !stats) resolve(candidate)
+        else {
+          n++
+          if (n > 999) resolve(`${stem}-${Date.now()}${ext}`)
+          else tryName()
+        }
+      })
+    }
+    tryName()
+  })
 }

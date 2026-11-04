@@ -23,19 +23,23 @@ import {
   serversFromCsv,
   serversToCsv
 } from './vault/transfer'
-import { ConnectionManager, testConnection } from './ssh/manager'
+import { ConnectionManager, healthCheckAll, testConnection } from './ssh/manager'
+import { looksLikePrivateKey } from './ssh/auth'
 import {
+  chmodRemote,
   closeSftp,
   downloadRemote,
+  existingNames,
   listDir,
   mkdir as sftpMkdir,
   openSftp,
   removeRemote,
+  renameRemote,
   uploadPaths,
   type SftpHandle
 } from './ssh/sftp'
 import { TRANSFER_PROGRESS_CHANNEL } from '@shared/types'
-import type { RemoteEntry, TransferProgress } from '@shared/types'
+import type { ConflictPolicy, RemoteEntry, TransferProgress } from '@shared/types'
 
 /** Live SFTP connections, keyed by the connection id handed to the renderer. */
 const sftpHandles = new Map<string, SftpHandle>()
@@ -52,6 +56,9 @@ function toView(entry: ServerEntry): ServerView {
     host: entry.host,
     port: entry.port,
     username: entry.username,
+    authMethod: entry.authMethod ?? 'password',
+    hasKey: !!entry.keyAuth?.privateKey,
+    hasKeyPassphrase: !!entry.keyAuth?.passphrase,
     tags: entry.tags,
     notes: entry.notes,
     elevate: {
@@ -164,6 +171,55 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     if (signal) signal.cancelled = true
   })
 
+  handle(
+    'sftpCheckConflicts',
+    async (input: { connectionId: string; remoteDir: string; names: string[] }) => ({
+      existing: await existingNames(requireHandle(input.connectionId), input.remoteDir, input.names)
+    })
+  )
+
+  handle('sftpRename', (input: { connectionId: string; from: string; to: string }) =>
+    renameRemote(requireHandle(input.connectionId), input.from, input.to)
+  )
+
+  handle('sftpChmod', (input: { connectionId: string; target: string; mode: number }) =>
+    chmodRemote(requireHandle(input.connectionId), input.target, input.mode)
+  )
+
+  handle('pickKeyFile', async (_arg: unknown, event: Electron.IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Load private key',
+      properties: ['openFile', 'showHiddenFiles'],
+      filters: [
+        { name: 'SSH private key', extensions: ['pem', 'key', 'ppk', 'txt'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    const file = picked.filePaths[0]
+    if (picked.canceled || !file) return { ok: false }
+    const contents = readFileSync(file, 'utf8')
+    if (!looksLikePrivateKey(contents)) {
+      throw new Error(
+        'invalid-input:That file does not look like a private key (.ppk files must be converted with puttygen first)'
+      )
+    }
+    return { ok: true, contents, fileName: basename(file) }
+  })
+
+  handle('healthCheck', (input: { serverIds: string[] }) => {
+    const servers = input.serverIds
+      .map((id) => {
+        try {
+          return store.getServer(id)
+        } catch {
+          return null
+        }
+      })
+      .filter((s): s is NonNullable<typeof s> => !!s)
+    return healthCheckAll(servers, store)
+  })
+
   handle('sftpList', (input: { connectionId: string; dir: string }) =>
     listDir(requireHandle(input.connectionId), input.dir)
   )
@@ -179,7 +235,12 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
   handle(
     'sftpUpload',
     async (
-      input: { connectionId: string; remoteDir: string; localPaths: string[] },
+      input: {
+        connectionId: string
+        remoteDir: string
+        localPaths: string[]
+        conflictPolicy?: ConflictPolicy
+      },
       event: Electron.IpcMainInvokeEvent
     ) => {
       const handle = requireHandle(input.connectionId)
@@ -191,7 +252,8 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
           input.localPaths,
           input.remoteDir,
           emitProgress(event),
-          signal
+          signal,
+          input.conflictPolicy ?? 'overwrite'
         )
       } finally {
         transferSignals.delete(input.connectionId)
@@ -202,7 +264,10 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
 
   handle(
     'sftpPickAndUpload',
-    async (input: { connectionId: string; remoteDir: string }, event: Electron.IpcMainInvokeEvent) => {
+    async (
+      input: { connectionId: string; remoteDir: string; conflictPolicy?: ConflictPolicy },
+      event: Electron.IpcMainInvokeEvent
+    ) => {
       const win = BrowserWindow.fromWebContents(event.sender)!
       const picked = await dialog.showOpenDialog(win, {
         title: 'Upload to server',
@@ -213,7 +278,14 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
       const signal = { cancelled: false }
       transferSignals.set(input.connectionId, signal)
       try {
-        await uploadPaths(handle, picked.filePaths, input.remoteDir, emitProgress(event), signal)
+        await uploadPaths(
+          handle,
+          picked.filePaths,
+          input.remoteDir,
+          emitProgress(event),
+          signal,
+          input.conflictPolicy ?? 'overwrite'
+        )
       } finally {
         transferSignals.delete(input.connectionId)
       }
@@ -355,6 +427,7 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
             username: i.username,
             password: i.password ?? '',
             authMethod: 'password' as const,
+            keyAuth: null,
             tags: i.tags,
             notes: i.notes,
             elevate: {

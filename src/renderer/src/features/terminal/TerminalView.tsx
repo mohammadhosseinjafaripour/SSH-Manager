@@ -2,8 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
-import { FolderClosed, Pencil, RefreshCw, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  FolderClosed,
+  Pencil,
+  RefreshCw,
+  Search,
+  X
+} from 'lucide-react'
 import { FilesPanel } from '../files/FilesPanel'
 import { Button } from '../../components/ui'
 import { serverById } from '../../stores/vault'
@@ -41,8 +50,143 @@ function terminalColors() {
   }
 }
 
+/**
+ * Terminal search. Uses xterm's search addon, so it walks the real scrollback
+ * buffer rather than the DOM, and highlights every match.
+ */
+function SearchBar({ search, onClose }: { search: SearchAddon | null; onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const [caseSensitive, setCaseSensitive] = useState(false)
+  const [wholeWord, setWholeWord] = useState(false)
+  const [hits, setHits] = useState<{ index: number; count: number }>({ index: 0, count: 0 })
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  useEffect(() => {
+    if (!search) return
+    const sub = search.onDidChangeResults((e) =>
+      setHits({ index: e.resultIndex, count: e.resultCount })
+    )
+    return () => sub.dispose()
+  }, [search])
+
+  const run = (dir: 'next' | 'prev') => {
+    if (!query) return
+    const opts = { caseSensitive, wholeWord, incremental: true }
+    if (dir === 'next') search?.findNext(query, opts)
+    else search?.findPrevious(query, opts)
+  }
+
+  return (
+    <div className="banner-in absolute right-3 top-2 z-20 flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1.5 shadow-xl">
+      <Search size={13} className="shrink-0 text-faint" />
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          if (e.target.value) {
+            search?.findNext(e.target.value, { caseSensitive, wholeWord, incremental: true })
+          } else {
+            search?.clearDecorations()
+            setHits({ index: 0, count: 0 })
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            run(e.shiftKey ? 'prev' : 'next')
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            search?.clearDecorations()
+            onClose()
+          }
+        }}
+        placeholder="Find in terminal…"
+        aria-label="Find in terminal"
+        className="h-6 w-44 bg-transparent text-[12.5px] text-fg placeholder:text-faint focus:outline-none"
+      />
+      <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-faint">
+        {query ? `${hits.count === 0 ? 0 : hits.index + 1}/${hits.count}` : ''}
+      </span>
+      <button
+        type="button"
+        onClick={() => run('prev')}
+        disabled={!query}
+        aria-label="Previous match"
+        className="rounded p-1 text-muted transition-colors hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+      >
+        <ChevronUp size={13} />
+      </button>
+      <button
+        type="button"
+        onClick={() => run('next')}
+        disabled={!query}
+        aria-label="Next match"
+        className="rounded p-1 text-muted transition-colors hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+      >
+        <ChevronDown size={13} />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const next = !caseSensitive
+          setCaseSensitive(next)
+          if (query) search?.findNext(query, { caseSensitive: next, wholeWord, incremental: true })
+        }}
+        title="Match case"
+        aria-pressed={caseSensitive}
+        className={`rounded px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
+          caseSensitive ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
+        }`}
+      >
+        Aa
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const next = !wholeWord
+          setWholeWord(next)
+          if (query) search?.findNext(query, { caseSensitive, wholeWord: next, incremental: true })
+        }}
+        title="Whole word"
+        aria-pressed={wholeWord}
+        className={`rounded px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
+          wholeWord ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
+        }`}
+      >
+        ab
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          search?.clearDecorations()
+          onClose()
+        }}
+        aria-label="Close search"
+        className="rounded p-1 text-faint transition-colors hover:text-fg"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  )
+}
+
 export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  // The addon lives in state (not a ref) because it is read during render when
+  // the search bar mounts; a ref read there would be unsafe under concurrent
+  // rendering.
+  const [search, setSearch] = useState<SearchAddon | null>(null)
+  // Visibility lives in the store so the toolbar button, the keyboard shortcut
+  // and the pane all agree without effects or ref reads.
+  const searchOpen = useSessions((s) => s.searchFor) === tab.sessionId
+  const closeSearch = useSessions((s) => s.closeSearch)
+  const requestSearch = useSessions((s) => s.requestSearch)
   const fitRef = useRef<(() => void) | null>(null)
   const server = serverById(tab.serverId)
   const openServerForm = useUi((s) => s.openServerForm)
@@ -62,6 +206,9 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
+    const searchAddon = new SearchAddon()
+    term.loadAddon(searchAddon)
+    setSearch(searchAddon)
     term.open(host)
 
     const port = sessionPorts.get(tab.sessionId)
@@ -118,6 +265,12 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
 
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
+      // Ctrl+Shift+F opens the in-terminal search (plain Ctrl+F still reaches
+      // the remote shell, e.g. readline's forward-char).
+      if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyF') {
+        requestSearch(tab.sessionId)
+        return false
+      }
       if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyC') {
         const sel = term.getSelection()
         if (sel) void navigator.clipboard.writeText(sel).catch(() => undefined)
@@ -186,6 +339,10 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
   return (
     <div className="relative h-full w-full overflow-hidden">
       <div ref={hostRef} className="h-full w-full bg-[var(--term-bg)]" />
+
+      {searchOpen && search && (
+        <SearchBar search={search} onClose={closeSearch} />
+      )}
 
       {/* Fades in/out instead of popping, so switching tabs and connecting
           feel continuous rather than flickering. `visibility` (not just
@@ -347,6 +504,16 @@ export function TerminalView() {
             )
           })}
         </div>
+
+        <button
+          type="button"
+          onClick={() => useSessions.getState().requestSearch(active)}
+          disabled={!activeTab}
+          title="Find in terminal (Ctrl+Shift+F)"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+        >
+          <Search size={14} />
+        </button>
 
         <button
           type="button"

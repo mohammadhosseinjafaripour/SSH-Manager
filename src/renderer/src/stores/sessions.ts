@@ -76,12 +76,17 @@ function wirePort(sessionId: string, port: SessionPort): void {
 interface SessionsState {
   tabs: SessionTab[]
   active: string | 'servers'
+  /** Which session's terminal has the search bar open (null = closed). */
+  searchFor: string | null
   open: (server: ServerView) => Promise<void>
   select: (which: string | 'servers') => void
   cycle: (direction: 1 | -1) => void
   closeTab: (sessionId: string) => void
   setStatus: (sessionId: string, status: SessionStatus, detail?: string) => void
   pushNotice: (sessionId: string) => void
+  /** Asks the given session's terminal pane to open its search bar. */
+  requestSearch: (sessionId: string | 'servers') => void
+  closeSearch: () => void
   registerPort: (sessionId: string, port: SessionPort) => void
   reconnect: (sessionId: string) => Promise<void>
 }
@@ -89,6 +94,7 @@ interface SessionsState {
 export const useSessions = create<SessionsState>((set, get) => ({
   tabs: [],
   active: 'servers',
+  searchFor: null,
 
   open: async (server) => {
     const { sessionId } = await window.sshvault.sessionOpen(server.id)
@@ -149,6 +155,13 @@ export const useSessions = create<SessionsState>((set, get) => ({
     const w = terminalWriters.get(sessionId)
     w?.('\r\n\x1b[38;5;42m● connection restored — previous output kept above\x1b[0m\r\n')
   },
+
+  requestSearch: (sessionId) => {
+    if (sessionId === 'servers') return
+    set({ searchFor: sessionId })
+  },
+
+  closeSearch: () => set({ searchFor: null }),
 
   registerPort: (sessionId, port) => {
     sessionPorts.set(sessionId, port)

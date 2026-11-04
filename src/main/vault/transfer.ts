@@ -229,6 +229,7 @@ export function serversFromCsv(text: string): CsvImportResult {
       host,
       port,
       username,
+      authMethod: 'password' as const,
       password: password || undefined,
       tags: normalizeTags(((idx('tags') !== -1 ? row[idx('tags')] : '') ?? '').split(';')),
       notes: (idx('notes') !== -1 ? row[idx('notes')] : '') ?? '',
@@ -257,7 +258,13 @@ function cloneIncoming(servers: ReadonlyArray<ServerEntry>, takenIds: Set<string
       id: takenIds.has(s.id) ? randomUUID() : s.id,
       tags: normalizeTags(s.tags ?? []),
       notes: s.notes ?? '',
-      authMethod: 'password',
+      // Preserve key-based auth through export/import; an imported key is
+      // already encrypted inside the transport envelope.
+      authMethod: s.authMethod === 'key' || s.authMethod === 'agent' ? s.authMethod : 'password',
+      keyAuth:
+        s.authMethod === 'key' && s.keyAuth?.privateKey
+          ? { privateKey: s.keyAuth.privateKey, passphrase: s.keyAuth.passphrase ?? '' }
+          : null,
       elevate: {
         enabled: !!s.elevate?.enabled,
         preset: s.elevate?.preset ?? 'sudo -s',

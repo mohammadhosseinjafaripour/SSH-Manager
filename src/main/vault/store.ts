@@ -178,6 +178,29 @@ export class VaultStore {
         existing.port = input.port
         existing.username = input.username.trim()
         if (input.password !== undefined && input.password !== '') existing.password = input.password
+
+        const nextAuth = input.authMethod ?? existing.authMethod ?? 'password'
+        // Switching to key auth replaces the stored key only when a new one is
+        // supplied; leaving it untouched keeps the existing key.
+        if (nextAuth === 'key') {
+          if (input.privateKey) {
+            existing.keyAuth = {
+              privateKey: input.privateKey,
+              passphrase: input.keyPassphrase ?? existing.keyAuth?.passphrase ?? ''
+            }
+          } else if (input.keyPassphrase !== undefined && existing.keyAuth) {
+            existing.keyAuth.passphrase = input.keyPassphrase
+          }
+          if (!existing.keyAuth?.privateKey) {
+            throw new Error('invalid-input:private key required for key authentication')
+          }
+        }
+        if (nextAuth === 'password' && !existing.password) {
+          throw new Error('invalid-input:password required for password authentication')
+        }
+        existing.authMethod = nextAuth
+        if (nextAuth !== 'key') existing.keyAuth = null
+
         existing.tags = normalizeTags(input.tags)
         existing.notes = input.notes
         existing.elevate = {
@@ -195,15 +218,25 @@ export class VaultStore {
         existing.updatedAt = now
         return existing
       }
-      if (!input.password) throw new Error('invalid-input:password required for a new server')
+      const authMethod = input.authMethod ?? 'password'
+      if (authMethod === 'password' && !input.password) {
+        throw new Error('invalid-input:password required for a new password-auth server')
+      }
+      if (authMethod === 'key' && !input.privateKey) {
+        throw new Error('invalid-input:private key required for key authentication')
+      }
       const entry: ServerEntry = {
         id: randomUUID(),
         name: input.name.trim(),
         host: input.host.trim(),
         port: input.port,
         username: input.username.trim(),
-        password: input.password,
-        authMethod: 'password',
+        password: input.password ?? '',
+        authMethod,
+        keyAuth:
+          authMethod === 'key' && input.privateKey
+            ? { privateKey: input.privateKey, passphrase: input.keyPassphrase ?? '' }
+            : null,
         tags: normalizeTags(input.tags),
         notes: input.notes,
         elevate: {

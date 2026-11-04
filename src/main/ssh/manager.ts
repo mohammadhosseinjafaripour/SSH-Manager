@@ -1,9 +1,10 @@
 import { MessageChannelMain, type WebContents } from 'electron'
 import { Client } from 'ssh2'
 import { SESSION_PORT_CHANNEL } from '@shared/types'
-import type { ServerEntry, TestConnectionResult } from '@shared/types'
+import type { HealthResult, ServerEntry, TestConnectionResult } from '@shared/types'
 import type { VaultStore } from '../vault/store'
 import { checkPin, fingerprintOf } from '../hostkeys/verifier'
+import { authConfig } from './auth'
 import { SshSession } from './session'
 
 /**
@@ -52,11 +53,15 @@ export class ConnectionManager {
  */
 export function testConnection(server: ServerEntry, store: VaultStore): Promise<TestConnectionResult> {
   return new Promise((resolve) => {
-    const { host, port, username, password } = server
+    const { host, port, username } = server
     let fingerprint: string | undefined
     let pinState: 'none' | 'match' | 'changed' = 'none'
+    let settled = false
+
+    const conn = new Client()
 
     const finish = (result: TestConnectionResult) => {
+      if (settled) return
       settled = true
       clearTimeout(timer)
       try {
@@ -67,8 +72,6 @@ export function testConnection(server: ServerEntry, store: VaultStore): Promise<
       resolve(result)
     }
 
-    const conn = new Client()
-    let settled = false
     const timer = setTimeout(
       () =>
         finish({
@@ -116,11 +119,23 @@ export function testConnection(server: ServerEntry, store: VaultStore): Promise<
       })
     })
 
+    let auth: ReturnType<typeof authConfig>
+    try {
+      auth = authConfig(server)
+    } catch (err) {
+      finish({
+        ok: false,
+        pinned: false,
+        message: err instanceof Error ? err.message : 'Missing credentials'
+      })
+      return
+    }
+
     conn.connect({
       host,
       port,
       username,
-      password,
+      ...auth,
       tryKeyboard: true,
       readyTimeout: 14_000,
       hostVerifier: (key: Buffer, cb?: (ok: boolean) => void) => {
@@ -143,4 +158,108 @@ export function testConnection(server: ServerEntry, store: VaultStore): Promise<
       }
     })
   })
+}
+
+/**
+ * Lightweight reachability probe used by the bulk health check. Deliberately
+ * does NOT authenticate-successfully-only: it distinguishes "server answers but
+ * rejects me" (auth-failed) from "nothing there" (unreachable), which is what
+ * you actually want to know when triaging many servers.
+ */
+export function probeServer(server: ServerEntry, store: VaultStore): Promise<HealthResult> {
+  return new Promise((resolve) => {
+    const started = Date.now()
+    let settled = false
+    let hostKeyChanged = false
+    const conn = new Client()
+
+    const finish = (status: HealthResult['status'], detail?: string, latency?: number) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        conn.end()
+      } catch {
+        /* gone */
+      }
+      resolve({ serverId: server.id, status, detail, latencyMs: latency })
+    }
+
+    const timer = setTimeout(() => finish('unreachable', 'Timed out'), 12_000)
+
+    conn.on('error', (err: Error) => {
+      const msg = err.message ?? ''
+      if (hostKeyChanged) {
+        finish('hostkey-changed', 'Host key changed — verify before connecting')
+        return
+      }
+      if (/All configured (?:authentication methods|auth methods)/i.test(msg)) {
+        // The TCP/TLS layer answered and the host key verified: the server is up.
+        finish('auth-failed', 'Server up, but credentials were rejected', Date.now() - started)
+        return
+      }
+      finish('unreachable', msg)
+    })
+
+    conn.on('ready', () =>
+      finish('online', undefined, Date.now() - started)
+    )
+
+    let auth: ReturnType<typeof authConfig>
+    try {
+      auth = authConfig(server)
+    } catch (err) {
+      finish('auth-failed', err instanceof Error ? err.message : 'Missing credentials')
+      return
+    }
+
+    conn.connect({
+      host: server.host,
+      port: server.port,
+      username: server.username,
+      ...auth,
+      tryKeyboard: true,
+      readyTimeout: 11_000,
+      hostVerifier: (key: Buffer, cb?: (ok: boolean) => void) => {
+        const decide = cb ?? (() => {})
+        try {
+          const check = checkPin(
+            store.getPayload().pinnedHostKeys,
+            server.host,
+            server.port,
+            fingerprintOf(key)
+          )
+          if (check.verdict === 'changed') {
+            hostKeyChanged = true
+            decide(false)
+          } else {
+            decide(true)
+          }
+        } catch {
+          decide(false)
+        }
+      }
+    })
+  })
+}
+
+/** Runs probes with bounded concurrency so 100 servers don't open 100 sockets. */
+export async function healthCheckAll(
+  servers: ReadonlyArray<ServerEntry>,
+  store: VaultStore,
+  concurrency = 8
+): Promise<HealthResult[]> {
+  const results: HealthResult[] = []
+  let index = 0
+  const workers = Array.from({ length: Math.min(concurrency, servers.length) }, async () => {
+    for (;;) {
+      const i = index++
+      if (i >= servers.length) return
+      results.push(await probeServer(servers[i], store))
+    }
+  })
+  await Promise.all(workers)
+  // Keep the caller's ordering for stable rendering.
+  const byId = new Map(results.map((r) => [r.serverId, r]))
+  return servers.map((s) => byId.get(s.id)).filter((r): r is HealthResult => !!r)
 }

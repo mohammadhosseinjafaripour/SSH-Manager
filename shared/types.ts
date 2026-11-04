@@ -17,16 +17,30 @@ export interface ElevateConfig {
   customPassword: string
 }
 
+/**
+ * SSH authentication. `password` and `agent` need nothing else; the key modes
+ * carry a PEM/OpenSSH private key stored encrypted inside the vault.
+ */
+export type AuthMethod = 'password' | 'key' | 'agent'
+
+export interface KeyAuth {
+  /** Private key in PEM or OpenSSH format (secret — main process only). */
+  privateKey: string
+  /** Passphrase protecting the key, if any (secret). */
+  passphrase: string
+}
+
 export interface ServerEntry {
   id: string
   name: string
   host: string
   port: number
   username: string
-  /** Server login password (secret — main process only). */
+  /** Server login password (secret — main process only). Empty when using a key. */
   password: string
-  /** Placeholder for v2 (SSH keys); password auth only in MVP. */
-  authMethod: 'password'
+  authMethod: AuthMethod
+  /** Present when authMethod is 'key'. */
+  keyAuth: KeyAuth | null
   tags: string[]
   notes: string
   elevate: ElevateConfig
@@ -42,6 +56,11 @@ export interface ServerView {
   host: string
   port: number
   username: string
+  authMethod: AuthMethod
+  /** True when a private key is stored (the key itself never leaves main). */
+  hasKey: boolean
+  /** True when the stored key is passphrase-protected. */
+  hasKeyPassphrase: boolean
   tags: string[]
   notes: string
   elevate: {
@@ -62,8 +81,14 @@ export interface ServerUpsertInput {
   host: string
   port: number
   username: string
+  /** Defaults to 'password' when omitted (CSV import, older callers). */
+  authMethod?: AuthMethod
   /** Omit/undefined on edit = keep the existing stored password. */
   password?: string
+  /** Omit/undefined on edit = keep the stored key. */
+  privateKey?: string
+  /** Omit/undefined on edit = keep the stored passphrase. */
+  keyPassphrase?: string
   tags: string[]
   notes: string
   elevate: {
@@ -187,6 +212,31 @@ export interface TransferProgress {
   done: boolean
 }
 
+/** What to do when an upload targets a path that already exists. */
+export type ConflictPolicy = 'overwrite' | 'rename' | 'skip'
+
+export interface ConflictInfo {
+  /** Remote paths that already exist and would be overwritten. */
+  existing: string[]
+}
+
+export type HealthStatus = 'online' | 'auth-failed' | 'unreachable' | 'hostkey-changed'
+
+export interface HealthResult {
+  serverId: string
+  status: HealthStatus
+  /** Round-trip time for the handshake, when it succeeded. */
+  latencyMs?: number
+  detail?: string
+}
+
+export interface ServerTestResult {
+  ok: boolean
+  fingerprint?: string
+  pinned: boolean
+  message: string
+}
+
 export interface ImportSummary {
   added: number
   skippedDuplicates: number
@@ -262,12 +312,31 @@ export interface Bridge {
     connectionId: string
     remoteDir: string
     localPaths: string[]
+    conflictPolicy?: ConflictPolicy
   }): Promise<{ uploaded: number }>
   /** Opens a native picker and uploads the chosen files/folders. */
   sftpPickAndUpload(input: {
     connectionId: string
     remoteDir: string
+    conflictPolicy?: ConflictPolicy
   }): Promise<{ ok: boolean; uploaded: number }>
+  /** Checks which remote paths already exist (before uploading). */
+  sftpCheckConflicts(input: {
+    connectionId: string
+    remoteDir: string
+    names: string[]
+  }): Promise<ConflictInfo>
+  sftpRename(input: {
+    connectionId: string
+    from: string
+    to: string
+  }): Promise<void>
+  sftpChmod(input: {
+    connectionId: string
+    target: string
+    /** Numeric mode, e.g. 0o644. */
+    mode: number
+  }): Promise<void>
   /** Downloads remote entries into a user-chosen local folder. */
   sftpDownload(input: {
     connectionId: string
@@ -281,6 +350,11 @@ export interface Bridge {
   onTransferProgress(cb: (p: TransferProgress) => void): () => void
   /** Cancels the in-flight transfer on a connection, if any. */
   sftpCancel(input: { connectionId: string }): Promise<void>
+
+  /** Tests every stored server in parallel; resolves per-server health. */
+  healthCheck(input: { serverIds: string[] }): Promise<HealthResult[]>
+  /** Opens a file picker and returns a local private key's text. */
+  pickKeyFile(): Promise<{ ok: boolean; contents?: string; fileName?: string }>
   onSessionPort(cb: (sessionId: string, port: SessionPort) => void): () => void
   onLocked(cb: () => void): () => void
 }
@@ -318,6 +392,11 @@ export const BRIDGE_CHANNELS = {
   sftpPickAndUpload: 'sftp:pick-and-upload',
   sftpDownload: 'sftp:download',
   sftpCancel: 'sftp:cancel',
+  sftpCheckConflicts: 'sftp:check-conflicts',
+  sftpRename: 'sftp:rename',
+  sftpChmod: 'sftp:chmod',
+  healthCheck: 'servers:health-check',
+  pickKeyFile: 'app:pick-key-file',
   resolveDroppedPaths: 'app:resolve-dropped-paths'
 } as const satisfies Record<string, string>
 
