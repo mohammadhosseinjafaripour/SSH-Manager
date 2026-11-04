@@ -1,0 +1,36 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#131b27"/>
+      <stop offset="1" stop-color="#0c111a"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15202f"/>
+      <stop offset="1" stop-color="#101826"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded tile -->
+  <rect x="8" y="8" width="1008" height="1008" rx="224" fill="url(#tile)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="224" fill="none" stroke="#26313f" stroke-width="8"/>
+
+  <!-- terminal panel -->
+  <rect x="152" y="232" width="720" height="560" rx="72" fill="url(#panel)"/>
+  <rect x="152" y="232" width="720" height="560" rx="72" fill="none" stroke="#1f2835" stroke-width="10"/>
+
+  
+  <!-- window dots -->
+  <circle cx="236" cy="316" r="20" fill="rgb(248 113 113 / 0.55)"/>
+  <circle cx="310" cy="316" r="20" fill="rgb(251 191 36 / 0.55)"/>
+  <circle cx="384" cy="316" r="20" fill="rgb(52 211 153 / 0.55)"/>
+  
+
+  <!-- prompt: ">" chevron (nudged up for optical balance) -->
+  <path d="M 300 420 L 470 552 L 300 684"
+        fill="none" stroke="#2dd4bf" stroke-width="84"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- prompt: "_" cursor, flat ends -->
+  <rect x="548" y="612" width="200" height="76" rx="10" fill="#2dd4bf"/>
+</svg>

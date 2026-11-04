@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/screenshots/icon.png" width="96" alt="SSH Vault logo" />
+</p>
+
 # SSH Vault
 
 A secure, minimal SSH connection manager for Windows — PuTTY's job, without the dialogs.
