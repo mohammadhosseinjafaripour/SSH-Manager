@@ -160,6 +160,31 @@ multi-GB uploads don't exhaust memory. A separate SSH connection is opened for S
 large transfer never competes with your interactive shell for window space. The host key
 is checked against the same pin as the terminal, and a **changed** key is refused.
 
+## Updates
+
+SSH Vault updates itself from GitHub Releases — no links in chat, no manual
+re-downloads.
+
+- **Automatic checks** run shortly after launch and every six hours. They can be
+  turned off in **Settings → Updates**; when off, the app makes no request at all.
+- When a newer version exists it **downloads in the background** and the Settings
+  panel shows progress, then offers **Restart and install**.
+- Installing is **always your decision** — the app never quits on its own, because
+  that would kill live SSH sessions. `autoInstallOnQuit` is deliberately disabled.
+- **Check now** always works, even with automatic checks disabled, and there is a
+  **Release notes** button that opens the GitHub releases page.
+
+Privacy: a check is one HTTPS GET for a public `latest.yml` manifest. It sends
+nothing about you, your servers or your usage. The downloaded installer is
+verified against the `sha512` published in that manifest.
+
+The **portable** build cannot self-update (there is no installation to replace);
+it reports the new version and links to the release page.
+
+To publish a new version, see [docs/RELEASING.md](docs/RELEASING.md): bump the
+version, run `npm run package`, and attach the installer, `latest.yml` and the
+`.blockmap` to a tagged GitHub Release.
+
 ## Staying connected
 
 Servers that drop you after a few idle minutes are handled in three layers:

@@ -3,6 +3,7 @@ import {
   BRIDGE_CHANNELS,
   SESSION_PORT_CHANNEL,
   TRANSFER_PROGRESS_CHANNEL,
+  UPDATE_STATE_CHANNEL,
   VAULT_LOCKED_CHANNEL
 } from '@shared/types'
 import type { Bridge, MainPortMessage, SessionPort, TransferProgress } from '@shared/types'
@@ -57,6 +58,16 @@ const api: Bridge = {
   complete: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.complete, input),
   pickKeyFile: () => ipcRenderer.invoke(BRIDGE_CHANNELS.pickKeyFile),
   resolveDroppedPaths: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.resolveDroppedPaths, input),
+
+  updateState: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateState),
+  updateCheck: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateCheck),
+  updateInstall: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateInstall),
+  openReleases: () => ipcRenderer.invoke(BRIDGE_CHANNELS.openReleases),
+  onUpdateState: (cb) => {
+    const handler = (_e: unknown, st: unknown) => cb(st as never)
+    ipcRenderer.on(UPDATE_STATE_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, handler)
+  },
 
   onTransferProgress: (cb) => {
     const handler = (_e: unknown, p: TransferProgress) => cb(p)

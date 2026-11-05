@@ -124,6 +124,8 @@ export interface VaultSettings {
   keepAlive: boolean
   /** Show local inline command suggestions (ghost text) in the terminal. */
   autocomplete: boolean
+  /** Check GitHub Releases for newer versions in the background. */
+  autoUpdate: boolean
   /** Reconnect automatically when a session drops unexpectedly. */
   autoReconnect: boolean
 }
@@ -237,6 +239,28 @@ export interface ServerTestResult {
   fingerprint?: string
   pinned: boolean
   message: string
+}
+
+/** Auto-update lifecycle, surfaced in Settings. */
+export type UpdatePhase =
+  | 'idle'
+  | 'disabled'
+  | 'checking'
+  | 'up-to-date'
+  | 'downloading'
+  | 'ready'
+  | 'error'
+
+export interface UpdateState {
+  phase: UpdatePhase
+  /** Version being downloaded / ready to install. */
+  version?: string
+  /** Download progress 0-100. */
+  percent?: number
+  /** Human-readable failure, shown only in Settings. */
+  error?: string
+  /** ISO timestamp of the last completed check. */
+  checkedAt?: string
 }
 
 /** A single inline completion offered by the terminal. */
@@ -386,6 +410,16 @@ export interface Bridge {
     pathKind?: 'files' | 'dirs'
   }): Promise<InlineSuggestion[]>
 
+  // ---- auto-update --------------------------------------------------------
+  updateState(): Promise<UpdateState>
+  /** Force a check now (works even when background checks are disabled). */
+  updateCheck(): Promise<UpdateState>
+  /** Quit and install a downloaded update. */
+  updateInstall(): Promise<void>
+  /** Open the GitHub releases page in the default browser. */
+  openReleases(): Promise<void>
+  onUpdateState(cb: (s: UpdateState) => void): () => void
+
   /** Tests every stored server in parallel; resolves per-server health. */
   healthCheck(input: { serverIds: string[] }): Promise<HealthResult[]>
   /** Opens a file picker and returns a local private key's text. */
@@ -432,12 +466,17 @@ export const BRIDGE_CHANNELS = {
   sftpRename: 'sftp:rename',
   sftpChmod: 'sftp:chmod',
   healthCheck: 'servers:health-check',
+  updateState: 'update:state',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  openReleases: 'update:open-releases',
   complete: 'terminal:complete',
   pickKeyFile: 'app:pick-key-file',
   resolveDroppedPaths: 'app:resolve-dropped-paths'
 } as const satisfies Record<string, string>
 
 export const TRANSFER_PROGRESS_CHANNEL = 'transfer:progress'
+export const UPDATE_STATE_CHANNEL = 'update:state'
 
 export const SESSION_PORT_CHANNEL = 'session-port'
 export const VAULT_LOCKED_CHANNEL = 'vault:locked'

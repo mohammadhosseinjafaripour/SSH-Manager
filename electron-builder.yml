@@ -1,4 +1,12 @@
 appId: app.sshvault.desktop
+# Auto-update source. electron-builder writes the repo into app-update.yml inside
+# the package and generates latest.yml next to the installer; publishing a
+# GitHub Release with those files is all the client needs.
+publish:
+  provider: github
+  owner: mohammadhosseinjafaripour
+  repo: SSH-Manager
+  releaseType: release
 productName: SSH Vault
 copyright: MIT
 directories:

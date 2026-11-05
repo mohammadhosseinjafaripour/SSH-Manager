@@ -33,7 +33,7 @@ const defaultState: MockState = {
   created: false,
   masterPassword: '',
   servers: seedServers(),
-  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true },
+  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true, autoUpdate: true },
   pinned: {}
 }
 
@@ -566,6 +566,14 @@ export function createMockBridge(): Bridge {
       }
       return []
     },
+    updateState: async () => ({ phase: 'idle' as const }),
+    updateCheck: async () => ({
+      phase: 'up-to-date' as const,
+      checkedAt: new Date().toISOString()
+    }),
+    updateInstall: async () => undefined,
+    openReleases: async () => undefined,
+    onUpdateState: () => () => undefined,
     pickKeyFile: async () =>
       new Promise((resolve) => {
         const input = document.createElement('input')

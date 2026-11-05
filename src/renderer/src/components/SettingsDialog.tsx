@@ -1,5 +1,15 @@
-import { ArrowDownToLine, ArrowUpFromLine, FileSpreadsheet, Moon, Settings2, Sun } from 'lucide-react'
-import type { Theme } from '@shared/types'
+import { useEffect, useState } from 'react'
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Download,
+  FileSpreadsheet,
+  Moon,
+  RefreshCw,
+  Settings2,
+  Sun
+} from 'lucide-react'
+import type { Theme, UpdateState } from '@shared/types'
 import { Button, Dialog, Field, Input, Switch } from './ui'
 import { applyTheme } from '../lib/theme'
 import { useUi } from '../stores/ui'
@@ -15,6 +25,22 @@ export function SettingsDialog() {
   const settingsOpen = useUi((s) => s.settingsOpen)
   const setSettingsOpen = useUi((s) => s.setSettingsOpen)
   const settings = useVault((s) => s.settings)
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    void window.sshvault.updateState().then(setUpdate)
+    return window.sshvault.onUpdateState(setUpdate)
+  }, [])
+
+  const checkNow = async () => {
+    setChecking(true)
+    try {
+      setUpdate(await window.sshvault.updateCheck())
+    } finally {
+      setChecking(false)
+    }
+  }
   const updateSettings = useVault((s) => s.updateSettings)
 
   const saveTheme = async (theme: string) => {
@@ -119,6 +145,53 @@ export function SettingsDialog() {
           </label>
         </div>
 
+        <div className="flex flex-col gap-2.5 border-t border-line pt-4">
+          <p className="text-[13px] font-medium text-fg">Updates</p>
+
+          <label className="flex cursor-pointer items-start justify-between gap-3">
+            <span>
+              <span className="block text-[12.5px] text-fg">Check for updates automatically</span>
+              <span className="block text-[11.5px] leading-relaxed text-muted">
+                Asks GitHub for a newer release a few times a day. Nothing about you or your
+                servers is sent — just a download of a public file.
+              </span>
+            </span>
+            <Switch
+              label="Check for updates automatically"
+              checked={settings.autoUpdate !== false}
+              onCheckedChange={(v) => void updateSettings({ autoUpdate: v })}
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void checkNow()}
+              loading={checking}
+            >
+              <RefreshCw size={13} />
+              Check now
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void window.sshvault.openReleases()}
+            >
+              Release notes
+            </Button>
+            {update?.phase === 'ready' && (
+              <Button size="sm" onClick={() => void window.sshvault.updateInstall()}>
+                <Download size={13} />
+                Restart and install
+              </Button>
+            )}
+          </div>
+
+          <p className="text-[11.5px] leading-relaxed text-muted">{describeUpdate(update)}</p>
+        </div>
+
+
         <div className="border-t border-line pt-4">
           <p className="mb-2.5 text-[13px] font-medium text-fg">Move your servers</p>
           <div className="grid grid-cols-2 gap-2">
@@ -169,3 +242,30 @@ export function SettingsDialog() {
 }
 
 export { THEME_OPTIONS }
+
+/**
+ * Human-readable status line for the Updates section. Deliberately quiet:
+ * a failed check is a sentence, not an error dialog, because it should never
+ * interrupt someone working on a server.
+ */
+function describeUpdate(state: UpdateState | null): string {
+  if (!state) return 'Not checked yet.'
+  switch (state.phase) {
+    case 'disabled':
+      return state.error ?? 'Automatic checks are off.'
+    case 'checking':
+      return 'Checking GitHub for a newer version…'
+    case 'up-to-date':
+      return state.checkedAt
+        ? `You are on the latest version (checked ${new Date(state.checkedAt).toLocaleString()}).`
+        : 'You are on the latest version.'
+    case 'downloading':
+      return `Downloading version ${state.version ?? ''}… ${state.percent ?? 0}%`
+    case 'ready':
+      return `Version ${state.version ?? ''} is downloaded and ready. Restart when convenient — open SSH sessions will close.`
+    case 'error':
+      return `Could not check for updates: ${state.error ?? 'unknown error'}`
+    default:
+      return 'Not checked yet.'
+  }
+}

@@ -23,6 +23,7 @@
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",
     "@xterm/addon-search": "^0.16.0",
+    "electron-updater": "^6.8.11",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {

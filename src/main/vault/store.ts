@@ -63,7 +63,8 @@ function defaultPayload(): VaultPayload {
       theme: 'dark',
       keepAlive: true,
       autoReconnect: true,
-      autocomplete: true
+      autocomplete: true,
+      autoUpdate: true
     }
   }
 }
@@ -279,6 +280,7 @@ export class VaultStore {
       if (patch.keepAlive !== undefined) p.settings.keepAlive = !!patch.keepAlive
       if (patch.autoReconnect !== undefined) p.settings.autoReconnect = !!patch.autoReconnect
       if (patch.autocomplete !== undefined) p.settings.autocomplete = !!patch.autocomplete
+      if (patch.autoUpdate !== undefined) p.settings.autoUpdate = !!patch.autoUpdate
       return p.settings
     })
   }

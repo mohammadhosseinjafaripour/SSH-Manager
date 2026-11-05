@@ -4,6 +4,7 @@ import { VAULT_LOCKED_CHANNEL } from '@shared/types'
 import { registerIpc } from './ipc'
 import { VaultStore } from './vault/store'
 import { ConnectionManager } from './ssh/manager'
+import { UpdateService, registerUpdateIpc } from './updater'
 
 /**
  * Vault lives under %LOCALAPPDATA%\SSHVault (not the roaming profile), so a
@@ -23,6 +24,7 @@ let mainWindow: BrowserWindow | null = null
 let store: VaultStore | null = null
 let manager: ConnectionManager | null = null
 let lockTimer: ReturnType<typeof setInterval> | null = null
+let updater: UpdateService | null = null
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -86,6 +88,20 @@ app.whenReady().then(() => {
   mainWindow = createWindow()
   manager = new ConnectionManager(store, mainWindow.webContents)
   registerIpc(store, manager)
+
+  // Auto-update: reads the user setting lazily so toggling it takes effect
+  // without a restart.
+  updater = new UpdateService(() => {
+    try {
+      return store!.getPayload().settings.autoUpdate !== false
+    } catch {
+      return true
+    }
+  })
+  updater.attach(mainWindow)
+  registerUpdateIpc(updater)
+  updater.start()
+
   startAutoLock()
 
   app.on('activate', () => {
@@ -104,6 +120,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  updater?.stop()
   manager?.closeAll()
   store?.lock()
 })
