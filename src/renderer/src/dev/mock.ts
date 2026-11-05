@@ -520,6 +520,10 @@ export function createMockBridge(): Bridge {
       )
       if (entry) entry.permissions = mode
     },
+    sftpUploadToServer: async ({ localPaths }) => {
+      await new Promise((r) => setTimeout(r, 700))
+      return { uploaded: localPaths.length, remoteDir: '/home/deploy' }
+    },
     pickKeyFile: async () =>
       new Promise((resolve) => {
         const input = document.createElement('input')

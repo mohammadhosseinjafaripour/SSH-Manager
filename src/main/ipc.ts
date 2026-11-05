@@ -207,6 +207,50 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     return { ok: true, contents, fileName: basename(file) }
   })
 
+  /**
+   * Drag & drop onto the terminal: upload to a server with no Files panel open.
+   * Opens its own short-lived SFTP connection, uploads, then tears it down.
+   */
+  handle(
+    'sftpUploadToServer',
+    async (
+      input: {
+        serverId: string
+        remoteDir?: string
+        localPaths: string[]
+        conflictPolicy?: ConflictPolicy
+      },
+      event: Electron.IpcMainInvokeEvent
+    ) => {
+      if (!input.localPaths?.length) throw new Error('invalid-input:nothing to upload')
+      const handle = await openSftp(input.serverId, store)
+      try {
+        const remoteDir =
+          input.remoteDir ??
+          (await new Promise<string>((resolve) => {
+            handle.sftp.realpath('.', (err, resolved) => resolve(err || !resolved ? '/' : resolved))
+          }))
+        const signal = { cancelled: false }
+        transferSignals.set(handle.id, signal)
+        try {
+          await uploadPaths(
+            handle,
+            input.localPaths,
+            remoteDir,
+            emitProgress(event),
+            signal,
+            input.conflictPolicy ?? 'rename'
+          )
+        } finally {
+          transferSignals.delete(handle.id)
+        }
+        return { uploaded: input.localPaths.length, remoteDir }
+      } finally {
+        closeSftp(handle)
+      }
+    }
+  )
+
   handle('healthCheck', (input: { serverIds: string[] }) => {
     const servers = input.serverIds
       .map((id) => {

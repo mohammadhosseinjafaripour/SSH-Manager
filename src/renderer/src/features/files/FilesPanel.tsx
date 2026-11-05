@@ -61,6 +61,7 @@ export function FilesPanel({
   const [sortAsc, setSortAsc] = useState(true)
   const [renameTarget, setRenameTarget] = useState<RemoteEntry | null>(null)
   const [chmodTarget, setChmodTarget] = useState<RemoteEntry | null>(null)
+  const [menu, setMenu] = useState<{ entry: RemoteEntry; x: number; y: number } | null>(null)
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('overwrite')
   const [pendingUpload, setPendingUpload] = useState<{ localPaths: string[] } | null>(null)
   const [conflicts, setConflicts] = useState<string[]>([])
@@ -136,6 +137,7 @@ export function FilesPanel({
         if (cancelled) return
         setEntries(list)
         setSelected(new Set())
+        setMenu(null)
         setError(null)
       })
       .catch((err) => {
@@ -482,48 +484,6 @@ export function FilesPanel({
       )}
 
       {/* selection actions */}
-      {selected.size > 0 && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-line-soft bg-panel-2 px-3 py-1.5">
-          <span className="text-[11.5px] text-muted">{selected.size} selected</span>
-          <div className="ml-auto flex gap-1.5">
-            {selected.size === 1 && (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    const only = entries.find((e) => selected.has(e.path))
-                    if (only) setRenameTarget(only)
-                  }}
-                >
-                  <Pencil size={12} />
-                  Rename
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    const only = entries.find((e) => selected.has(e.path))
-                    if (only) setChmodTarget(only)
-                  }}
-                >
-                  <Shield size={12} />
-                  Permissions
-                </Button>
-              </>
-            )}
-            <Button size="sm" variant="secondary" onClick={() => void downloadSelected()} loading={busy}>
-              <Download size={12} />
-              Download
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => void deleteSelected()} loading={busy}>
-              <Trash2 size={12} />
-              Delete
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* column headers */}
       <div className="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-1.5">
         <span className="w-4" />
@@ -560,9 +520,22 @@ export function FilesPanel({
                     role="option"
                     aria-selected={isSelected}
                     tabIndex={0}
-                    onClick={() => toggle(entry.path)}
+                    onClick={(e) => {
+                      // Modifier-click extends the selection instead of replacing it.
+                      if (e.ctrlKey || e.metaKey) {
+                        toggle(entry.path)
+                        return
+                      }
+                      setSelected(new Set([entry.path]))
+                    }}
                     onDoubleClick={() => {
                       if (entry.kind === 'dir') setCwd(entry.path)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      // Right-click selects the row it targets, then opens the menu.
+                      if (!isSelected) setSelected(new Set([entry.path]))
+                      setMenu({ entry, x: e.clientX, y: e.clientY })
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -608,14 +581,54 @@ export function FilesPanel({
         )}
       </div>
 
-      {/* footer */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-line px-3 py-1.5">
-        <Button size="sm" variant="ghost" onClick={() => void newFolder()} disabled={!connectionId}>
+      {/*
+        Fixed-height action bar. Deliberately ALWAYS rendered: inserting it on
+        first selection would shift the list downward mid-double-click, which
+        made folders almost impossible to open. Actions are disabled instead of
+        hidden, so the row geometry never changes.
+      */}
+      <div className="flex h-9 shrink-0 items-center gap-1 border-t border-line px-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void newFolder()}
+          disabled={!connectionId}
+          title="Create a folder here"
+        >
           <FolderPlus size={13} />
-          New folder
+          <span className="hidden xl:inline">New folder</span>
         </Button>
-        <span className="ml-auto text-[11px] text-faint">
-          {entries.length} item{entries.length === 1 ? '' : 's'}
+
+        <div className="mx-1 h-4 w-px bg-line" />
+
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void downloadSelected()}
+          loading={busy}
+          disabled={selected.size === 0}
+          title={selected.size ? `Download ${selected.size} item(s)` : 'Select items to download'}
+          aria-label="Download selected"
+          className="px-2"
+        >
+          <Download size={14} />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void deleteSelected()}
+          disabled={selected.size === 0}
+          title={selected.size ? `Delete ${selected.size} item(s)` : 'Select items to delete'}
+          aria-label="Delete selected"
+          className="px-2 text-danger/90 hover:bg-danger-soft hover:text-danger"
+        >
+          <Trash2 size={14} />
+        </Button>
+
+        <span className="ml-auto truncate text-[11px] text-faint">
+          {selected.size > 0
+            ? `${selected.size} of ${entries.length} selected`
+            : `${entries.length} item${entries.length === 1 ? '' : 's'}`}
         </span>
       </div>
 
@@ -657,6 +670,34 @@ export function FilesPanel({
         </div>
       )}
 
+      {menu && (
+        <RowContextMenu
+          menu={menu}
+          selectionCount={selected.size}
+          onClose={() => setMenu(null)}
+          onOpen={() => {
+            if (menu.entry.kind === 'dir') setCwd(menu.entry.path)
+            setMenu(null)
+          }}
+          onRename={() => {
+            setRenameTarget(menu.entry)
+            setMenu(null)
+          }}
+          onChmod={() => {
+            setChmodTarget(menu.entry)
+            setMenu(null)
+          }}
+          onDownload={() => {
+            void downloadSelected()
+            setMenu(null)
+          }}
+          onDelete={() => {
+            void deleteSelected()
+            setMenu(null)
+          }}
+        />
+      )}
+
       <RenameDialog
         entry={renameTarget}
         connectionId={connectionId ?? ''}
@@ -677,6 +718,119 @@ export function FilesPanel({
           <p className="text-[13px] font-medium text-fg">Drop to upload to {cwd}</p>
           <p className="text-[11.5px] text-muted">Files and folders are both supported</p>
         </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Right-click menu for a file/folder row. Keeps destructive and per-item
+ * actions out of the header, so the list layout never shifts mid-click.
+ * Positioned at the pointer and flipped when it would overflow the viewport.
+ */
+function RowContextMenu({
+  menu,
+  selectionCount,
+  onClose,
+  onOpen,
+  onRename,
+  onChmod,
+  onDownload,
+  onDelete
+}: {
+  menu: { entry: RemoteEntry; x: number; y: number }
+  selectionCount: number
+  onClose: () => void
+  onOpen: () => void
+  onRename: () => void
+  onChmod: () => void
+  onDownload: () => void
+  onDelete: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ x: menu.x, y: menu.y })
+
+  // Clamp inside the window after measuring the real menu size.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    setPos({
+      x: Math.min(menu.x, window.innerWidth - rect.width - 8),
+      y: Math.min(menu.y, window.innerHeight - rect.height - 8)
+    })
+  }, [menu.x, menu.y])
+
+  // Any outside click, Escape or scroll dismisses the menu.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onClose)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onClose)
+    }
+  }, [onClose])
+
+  const item = (
+    label: string,
+    icon: React.ReactNode,
+    action: () => void,
+    opts: { danger?: boolean; disabled?: boolean } = {}
+  ) => (
+    <button
+      type="button"
+      onClick={action}
+      disabled={opts.disabled}
+      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors duration-100 disabled:opacity-40 ${
+        opts.danger
+          ? 'text-danger hover:bg-danger-soft'
+          : 'text-muted hover:bg-panel-2 hover:text-fg'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      style={{ left: pos.x, top: pos.y }}
+      className="fixed z-50 w-44 rounded-lg border border-line bg-panel p-1 shadow-2xl"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {menu.entry.kind === 'dir' && (
+        <>
+          {item('Open', <FolderClosed size={13} />, onOpen)}
+          <div className="my-1 h-px bg-line-soft" />
+        </>
+      )}
+      {item(
+        selectionCount > 1 ? `Download ${selectionCount} items` : 'Download',
+        <Download size={13} />,
+        onDownload
+      )}
+      {item('Rename', <Pencil size={13} />, onRename, {
+        disabled: selectionCount > 1
+      })}
+      {item('Permissions', <Shield size={13} />, onChmod, {
+        disabled: selectionCount > 1
+      })}
+      <div className="my-1 h-px bg-line-soft" />
+      {item(
+        selectionCount > 1 ? `Delete ${selectionCount} items` : 'Delete',
+        <Trash2 size={13} />,
+        onDelete,
+        { danger: true }
       )}
     </div>
   )

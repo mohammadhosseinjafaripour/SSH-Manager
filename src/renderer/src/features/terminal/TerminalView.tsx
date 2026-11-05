@@ -5,6 +5,9 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import {
+  AlertTriangle,
+  ArrowDownToLine,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   FolderClosed,
@@ -15,6 +18,7 @@ import {
 } from 'lucide-react'
 import { FilesPanel } from '../files/FilesPanel'
 import { Button } from '../../components/ui'
+import { friendlyError } from '../../lib/errors'
 import { serverById } from '../../stores/vault'
 import {
   registerTerminalWriter,
@@ -187,6 +191,79 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
   const searchOpen = useSessions((s) => s.searchFor) === tab.sessionId
   const closeSearch = useSessions((s) => s.closeSearch)
   const requestSearch = useSessions((s) => s.requestSearch)
+
+  // ---- drag & drop upload onto the terminal -------------------------------
+  // Independent of the Files panel: drops go to the server's home directory
+  // over a short-lived SFTP connection, so a plain terminal works too.
+  const canDrop =
+    tab.status === 'connected' ||
+    tab.status === 'elevated' ||
+    tab.status === 'elevated-unverified' ||
+    tab.status === 'elevated-no-prompt'
+  const [dropState, setDropState] = useState<'idle' | 'over' | 'busy' | 'done' | 'error'>('idle')
+  const [dropMsg, setDropMsg] = useState<string>('')
+  const dropDepth = useRef(0)
+  const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (dropTimer.current) clearTimeout(dropTimer.current)
+    }
+  }, [])
+
+  const finishDrop = (state: 'done' | 'error', msg: string) => {
+    setDropState(state)
+    setDropMsg(msg)
+    dropTimer.current = setTimeout(() => setDropState('idle'), 3500)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dropDepth.current = 0
+    if (!canDrop) {
+      finishDrop('error', 'Connect to the server first')
+      return
+    }
+    const files = Array.from(e.dataTransfer.files ?? [])
+    if (files.length === 0) return
+    const paths = await window.sshvault.resolveDroppedPaths({
+      files: files.map((f) => ({ path: (f as File & { path?: string }).path }))
+    })
+    if (paths.length === 0) {
+      finishDrop('error', 'Could not read the dropped files')
+      return
+    }
+    setDropState('busy')
+    setDropMsg(`Uploading ${paths.length} item${paths.length === 1 ? '' : 's'}…`)
+    try {
+      const res = await window.sshvault.sftpUploadToServer({
+        serverId: tab.serverId,
+        localPaths: paths
+      })
+      finishDrop('done', `Uploaded ${res.uploaded} item(s) to ${res.remoteDir}`)
+    } catch (err) {
+      finishDrop('error', friendlyError(err))
+    }
+  }
+
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dropDepth.current++
+    if (canDrop) setDropState('over')
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    dropDepth.current = Math.max(0, dropDepth.current - 1)
+    if (dropDepth.current === 0 && dropState === 'over') setDropState('idle')
+  }
+  const onDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none'
+    }
+  }
   const fitRef = useRef<(() => void) | null>(null)
   const server = serverById(tab.serverId)
   const openServerForm = useUi((s) => s.openServerForm)
@@ -337,8 +414,55 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
     tab.status === 'auth-failed' || tab.status === 'error' || tab.status === 'closed'
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div
+      className="relative h-full w-full overflow-hidden"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => void handleDrop(e)}
+    >
       <div ref={hostRef} className="h-full w-full bg-[var(--term-bg)]" />
+
+      {/* Drop-to-upload overlay (terminal-level, independent of the Files panel) */}
+      {(dropState === 'over' || dropState === 'busy' || dropState === 'done' || dropState === 'error') && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 backdrop-blur-[2px] ${
+            dropState === 'error'
+              ? 'bg-danger/10'
+              : dropState === 'done'
+                ? 'bg-[color-mix(in_srgb,var(--ok)_12%,transparent)]'
+                : 'bg-bg/80'
+          }`}
+        >
+          {dropState === 'over' && (
+            <>
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-dashed border-accent text-accent">
+                <ArrowDownToLine size={24} />
+              </div>
+              <p className="text-[13px] font-medium text-fg">Drop to upload</p>
+              <p className="text-[11.5px] text-muted">Files and folders go to your home directory</p>
+            </>
+          )}
+          {dropState === 'busy' && (
+            <>
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent" />
+              <p className="text-[13px] text-muted">{dropMsg}</p>
+            </>
+          )}
+          {dropState === 'done' && (
+            <>
+              <CheckCircle2 size={26} className="text-ok" />
+              <p className="text-[13px] text-ok">{dropMsg}</p>
+            </>
+          )}
+          {dropState === 'error' && (
+            <>
+              <AlertTriangle size={26} className="text-danger" />
+              <p className="max-w-[80%] text-center text-[13px] text-danger">{dropMsg}</p>
+            </>
+          )}
+        </div>
+      )}
 
       {searchOpen && search && (
         <SearchBar search={search} onClose={closeSearch} />

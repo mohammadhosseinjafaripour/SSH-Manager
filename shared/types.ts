@@ -351,6 +351,18 @@ export interface Bridge {
   /** Cancels the in-flight transfer on a connection, if any. */
   sftpCancel(input: { connectionId: string }): Promise<void>
 
+  /**
+   * Uploads dropped files straight to a server without needing the Files panel
+   * open (used by drag & drop onto the terminal). Opens a short-lived SFTP
+   * connection, uploads, then closes it.
+   */
+  sftpUploadToServer(input: {
+    serverId: string
+    remoteDir?: string
+    localPaths: string[]
+    conflictPolicy?: ConflictPolicy
+  }): Promise<{ uploaded: number; remoteDir: string }>
+
   /** Tests every stored server in parallel; resolves per-server health. */
   healthCheck(input: { serverIds: string[] }): Promise<HealthResult[]>
   /** Opens a file picker and returns a local private key's text. */
@@ -392,6 +404,7 @@ export const BRIDGE_CHANNELS = {
   sftpPickAndUpload: 'sftp:pick-and-upload',
   sftpDownload: 'sftp:download',
   sftpCancel: 'sftp:cancel',
+  sftpUploadToServer: 'sftp:upload-to-server',
   sftpCheckConflicts: 'sftp:check-conflicts',
   sftpRename: 'sftp:rename',
   sftpChmod: 'sftp:chmod',

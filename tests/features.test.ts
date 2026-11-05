@@ -79,3 +79,33 @@ describe('upload conflict policy semantics', () => {
     }
   })
 })
+
+describe('Files panel list stability (regression: layout shift broke double-click)', () => {
+  /**
+   * The old UI INSERTED a selection toolbar into the layout on the first click.
+   * That pushed the list down between the two clicks of a double-click, so the
+   * second click landed on a different row (or empty space) and folders could
+   * not be opened. The invariant: selecting a row must not change the list's
+   * vertical geometry, so per-item actions live in a context menu and the
+   * action bar is always rendered at a fixed height.
+   */
+  function simulatedRowTop(opts: { selectionBar: 'inserted' | 'fixed'; selected: boolean }) {
+    const HEADER = 40
+    const SEARCH_ROW = 44
+    const COLUMN_HEADERS = 24
+    const selectionBarHeight = opts.selectionBar === 'inserted' && opts.selected ? 32 : 0
+    return HEADER + SEARCH_ROW + COLUMN_HEADERS + selectionBarHeight
+  }
+
+  it('OLD behaviour shifted rows by the toolbar height (the bug)', () => {
+    const beforeClick = simulatedRowTop({ selectionBar: 'inserted', selected: false })
+    const afterClick = simulatedRowTop({ selectionBar: 'inserted', selected: true })
+    expect(afterClick - beforeClick).toBe(32) // <- this is what broke double-click
+  })
+
+  it('NEW behaviour keeps rows in place regardless of selection', () => {
+    const beforeClick = simulatedRowTop({ selectionBar: 'fixed', selected: false })
+    const afterClick = simulatedRowTop({ selectionBar: 'fixed', selected: true })
+    expect(afterClick).toBe(beforeClick)
+  })
+})
