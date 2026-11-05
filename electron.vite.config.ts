@@ -10,6 +10,27 @@ const alias = {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      /*
+       * Build the main process as CommonJS.
+       *
+       * The project is `"type": "module"`, so electron-vite defaults the main
+       * bundle to ESM — which emits `import { autoUpdater } from
+       * "electron-updater"`. That package is CommonJS with no `exports` field,
+       * so Node's ESM loader cannot resolve it and the app dies at startup with
+       * "SyntaxError: named export not found" BEFORE any error handler runs.
+       *
+       * CommonJS uses require(), which handles CommonJS dependencies natively.
+       * The preload is already CJS for the sandbox, so this makes main and
+       * preload consistent.
+       */
+      rollupOptions: {
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs'
+        }
+      }
+    },
     resolve: { alias }
   },
   preload: {

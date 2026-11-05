@@ -61,7 +61,21 @@ installed app, so the client knows where to look.
    Important: the release must **not** be a draft, and must not be marked
    prerelease (`allowPrerelease` is false).
 
-4. Existing installs pick it up within six hours, or immediately via
+4. **Run the startup smoke test before you publish.** This catches the whole
+   class of bug that produces a black window — a crash in the main process
+   during module loading, before any error handler can run. `npm run verify`
+   cannot see it, because nothing in that suite ever boots the packaged app.
+
+   ```bash
+   npm run smoke
+   ```
+
+   It launches `release/win-unpacked/SSH Vault.exe`, waits for a renderer page
+   to appear, and fails if the process throws a module error or the window has
+   no title. A `PASS` line means the app really starts and paints. Never publish
+   a build that does not pass.
+
+5. Existing installs pick it up within six hours, or immediately via
    **Settings → Updates → Check now**.
 
 ## What the update actually does
