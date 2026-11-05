@@ -29,6 +29,7 @@ npm install
 npm run dev        # development (Electron + hot reload)
 npm run verify     # typecheck + unit tests + lint + audit
 npm run package    # NSIS installer + portable exe (release/)
+npm run smoke      # launch the packaged app and prove it renders
 ```
 
 There is also a browser-only development mode with a mock SSH backend — handy for working on
@@ -37,6 +38,22 @@ the UI without touching real servers:
 ```bash
 npm run dev:ui     # serves the renderer at http://localhost:5188
 ```
+
+### If downloads stall
+
+On networks that throttle large HTTPS downloads from GitHub/CDNs, `electron-builder` can hang
+forever fetching the Electron runtime. A small static mirror works around it — stage the files
+with `curl`, serve them locally, and point the builder at that URL:
+
+```bash
+node scripts/local-mirror.mjs &     # serves .local-mirror/ on 127.0.0.1:8123
+ELECTRON_MIRROR=http://127.0.0.1:8123/mirror/electron/ \
+ELECTRON_BUILDER_BINARIES_MIRROR=http://127.0.0.1:8123/bins/ \
+  npm run package
+```
+
+The mirror root layout is `.local-mirror/mirror/electron/v<version>/electron-v<version>-win32-x64.zip`
+and `.local-mirror/bins/` for the NSIS/winCodeSign archives. `.local-mirror/` is git-ignored.
 
 
 ## Features (MVP)

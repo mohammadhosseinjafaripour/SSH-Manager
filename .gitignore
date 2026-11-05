@@ -11,3 +11,7 @@ package-output.txt
 release/
 .local-mirror/
 electron-45.2.1-win32-x64.zip
+build.log
+mirror.log
+launch.log
+portable.log
