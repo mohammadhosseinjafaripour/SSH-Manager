@@ -61,6 +61,14 @@
   --color-foreground: var(--fg);
   --color-muted-foreground: var(--muted);
   --color-ring: var(--accent);
+  /* beUI component tokens */
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-fg);
+  --color-border: var(--line);
+  --color-border-strong: var(--muted);
+  --color-card: var(--panel);
+  --color-destructive: var(--danger);
+  --color-success: var(--ok);
   --color-panel: var(--panel);
   --color-panel-2: var(--panel-2);
   --color-inset: var(--inset);

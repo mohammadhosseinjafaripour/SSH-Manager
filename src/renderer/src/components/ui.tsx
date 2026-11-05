@@ -1,56 +1,62 @@
 import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import * as SelectPrimitive from '@radix-ui/react-select'
-import { Check, ChevronDown, Eye, EyeOff, Loader2, X } from 'lucide-react'
+import { Eye, EyeOff, Loader2, X } from 'lucide-react'
 import { generatePassword } from '@shared/schemas'
 import { Switch as BeUISwitch } from './beui/Switch'
-
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-type ButtonSize = 'sm' | 'md'
-
-const buttonBase =
-  'inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none select-none'
-
-const buttonVariants: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-fg hover:bg-accent-strong',
-  secondary: 'bg-panel-2 text-fg border border-line hover:border-accent/60 hover:text-accent',
-  ghost: 'text-muted hover:text-fg hover:bg-panel-2',
-  danger: 'bg-danger text-white hover:opacity-90'
-}
-
-const buttonSizes: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[13px]',
-  md: 'h-10 px-4 text-sm'
-}
+import { BeUIButton } from './beui/button'
+import { BeUIInput } from './beui/input'
+import {
+  Select as SelectRoot,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from './beui/select'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant
-  size?: ButtonSize
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  size?: 'sm' | 'md'
   loading?: boolean
 }
 
+/**
+ * beUI button wrapper. Keeps the app's API (danger variant, sm/md sizing,
+ * loading spinner) while the interaction physics — press scale, hover lift,
+ * optional ripple — come from beUI.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', loading, className = '', children, disabled, type = 'button', ...rest },
+  {
+    variant = 'primary',
+    size = 'md',
+    loading,
+    className = '',
+    children,
+    disabled,
+    type = 'button',
+    ...rest
+  },
   ref
 ) {
   return (
-    <button
+    <BeUIButton
       ref={ref}
+      variant={variant}
+      size={size}
+      loading={loading}
       type={type}
-      className={`${buttonBase} ${buttonVariants[variant]} ${buttonSizes[size]} ${className}`}
-      disabled={disabled || loading}
+      disabled={disabled}
+      className={className}
       {...rest}
     >
-      {loading && <Loader2 size={15} className="animate-spin" />}
       {children}
-    </button>
+    </BeUIButton>
   )
 })
 
 /**
- * Defaults to type="button": an icon button inside a <form> would otherwise
- * default to type="submit" and submit the form (e.g. the password reveal
- * toggle closing the dialog).
+ * beUI icon button (size="icon"). Defaults to type="button": an icon button
+ * inside a <form> would otherwise default to type="submit" and submit the
+ * form (e.g. the password reveal toggle closing the dialog).
  */
 export function IconButton({
   label,
@@ -60,31 +66,38 @@ export function IconButton({
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <button
+    <BeUIButton
       type={type}
+      size="icon"
+      variant="ghost"
       aria-label={label}
       title={label}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg ${className}`}
+      className={`text-muted hover:bg-panel-2 hover:text-fg ${className}`}
       {...rest}
     >
       {children}
-    </button>
+    </BeUIButton>
   )
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
-  function Input({ className = '', invalid, ...rest }, ref) {
-    return (
-      <input
-        ref={ref}
-        className={`h-10 w-full rounded-lg border bg-inset px-3 text-sm text-fg placeholder:text-faint transition-colors duration-150 ${
-          invalid ? 'border-danger' : 'border-line focus:border-accent'
-        } ${className}`}
-        {...rest}
-      />
-    )
-  }
-)
+/**
+ * beUI input wrapper. `invalid` maps to beUI's error state (red border + shake
+ * on appearance); messages stay at the call site via the Field component so
+ * nothing shifts layout inside the pill.
+ */
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }
+>(function Input({ className = '', invalid, ...rest }, ref) {
+  return (
+    <BeUIInput
+      ref={ref}
+      error={invalid || undefined}
+      className={className}
+      {...(rest as Partial<import('./beui/input').BeUIInputProps>)}
+    />
+  )
+})
 
 export function PasswordInput({
   value,
@@ -247,6 +260,11 @@ export interface SelectOption {
   label: string
 }
 
+/**
+ * beUI select wrapper. Maps the app's options API onto beUI's compound
+ * select; the options panel renders inline and flips above/below the trigger
+ * based on viewport room.
+ */
 export function Select({
   value,
   onValueChange,
@@ -259,39 +277,18 @@ export function Select({
   ariaLabel: string
 }) {
   return (
-    <SelectPrimitive.Root value={value} onValueChange={onValueChange}>
-      <SelectPrimitive.Trigger
-        aria-label={ariaLabel}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-line bg-inset px-3 text-sm text-fg transition-colors duration-150 hover:border-accent/60 data-[placeholder]:text-faint"
-      >
-        <SelectPrimitive.Value />
-        <SelectPrimitive.Icon>
-          <ChevronDown size={15} className="text-muted" />
-        </SelectPrimitive.Icon>
-      </SelectPrimitive.Trigger>
-      <SelectPrimitive.Portal>
-        <SelectPrimitive.Content
-          position="popper"
-          sideOffset={6}
-          className="z-50 max-h-72 overflow-y-auto rounded-lg border border-line bg-panel p-1 shadow-xl"
-        >
-          <SelectPrimitive.Viewport>
-            {options.map((opt) => (
-              <SelectPrimitive.Item
-                key={opt.value}
-                value={opt.value}
-                className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm text-fg outline-none data-[highlighted]:bg-panel-2 data-[highlighted]:text-accent"
-              >
-                <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
-                <SelectPrimitive.ItemIndicator>
-                  <Check size={14} className="text-accent" />
-                </SelectPrimitive.ItemIndicator>
-              </SelectPrimitive.Item>
-            ))}
-          </SelectPrimitive.Viewport>
-        </SelectPrimitive.Content>
-      </SelectPrimitive.Portal>
-    </SelectPrimitive.Root>
+    <SelectRoot value={value} onValueChange={onValueChange}>
+      <SelectTrigger ariaLabel={ariaLabel}>
+        <SelectValue placeholder={options[0]?.label ?? 'Select'} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </SelectRoot>
   )
 }
 
