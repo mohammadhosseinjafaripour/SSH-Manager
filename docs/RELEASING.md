@@ -21,6 +21,17 @@ publish:
 `npm run package` bakes that into `resources/app-update.yml` inside the
 installed app, so the client knows where to look.
 
+**The repository must be public.** `electron-updater` fetches `latest.yml` with
+a plain unauthenticated HTTPS GET. Against a private repo every request returns
+404 and auto-update silently never works — no error is shown, the app just
+reports "up to date" forever. Check it before publishing:
+
+```bash
+curl -sIL -o /dev/null -w "%{http_code}\n" \
+  https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases/latest/download/latest.yml
+# expect 200
+```
+
 ## Cutting a release
 
 1. **Bump the version.** The updater compares semver against the newest
@@ -75,7 +86,27 @@ installed app, so the client knows where to look.
    no title. A `PASS` line means the app really starts and paints. Never publish
    a build that does not pass.
 
-5. Existing installs pick it up within six hours, or immediately via
+5. **Verify the published assets.** An upload that truncates or mangles the exe
+   breaks every client's sha512 check — and the failure only shows up on the
+   user's machine. This downloads the published file and compares it against
+   the manifest byte-for-byte:
+
+   ```bash
+   node scripts/verify-published.cjs 0.2.1
+   ```
+
+   Expect `PASS: published asset is byte-identical to the manifest`. Also spot
+   check that anonymous access works for all three assets:
+
+   ```bash
+   for f in latest.yml SSH-Vault-0.2.1-setup.exe.blockmap SSH-Vault-0.2.1-portable.exe; do
+     curl -sIL -o /dev/null -w "%{http_code}  $f\n" \
+       "https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases/download/v0.2.1/$f"
+   done
+   # expect 200 for each
+   ```
+
+6. Existing installs pick it up within six hours, or immediately via
    **Settings → Updates → Check now**.
 
 ## What the update actually does
