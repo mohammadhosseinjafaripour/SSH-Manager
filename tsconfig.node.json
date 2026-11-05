@@ -26,6 +26,7 @@
     "shared/**/*",
     "tests/**/*",
     "src/renderer/src/features/files/mode-utils.ts",
+    "src/renderer/src/features/files/column-model.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"
   ]

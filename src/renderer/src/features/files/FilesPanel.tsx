@@ -13,12 +13,14 @@ import {
   Shield,
   Trash2,
   Upload,
-  X
+  X,
+  Columns3
 } from 'lucide-react'
 import type { ConflictPolicy, RemoteEntry, TransferProgress } from '@shared/types'
 import { Button, IconButton, Select } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 import { ChmodDialog, RenameDialog } from './RenameDialog'
+import { COLUMNS, ColumnResizer, useColumnState } from './columns'
 import { octalToRwx } from './mode-utils'
 
 function formatBytes(n: number): string {
@@ -35,7 +37,7 @@ function parentOf(dir: string): string {
   return idx <= 0 ? '/' : trimmed.slice(0, idx)
 }
 
-type SortKey = 'name' | 'size' | 'modifiedAt'
+type SortKey = 'name' | 'size' | 'modified'
 
 /**
  * Remote file browser over SFTP: navigate, upload (picker or drag & drop),
@@ -62,6 +64,8 @@ export function FilesPanel({
   const [renameTarget, setRenameTarget] = useState<RemoteEntry | null>(null)
   const [chmodTarget, setChmodTarget] = useState<RemoteEntry | null>(null)
   const [menu, setMenu] = useState<{ entry: RemoteEntry; x: number; y: number } | null>(null)
+  const cols = useColumnState()
+  const [colMenuOpen, setColMenuOpen] = useState(false)
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('overwrite')
   const [pendingUpload, setPendingUpload] = useState<{ localPaths: string[] } | null>(null)
   const [conflicts, setConflicts] = useState<string[]>([])
@@ -361,24 +365,6 @@ export function FilesPanel({
     })
   }
 
-  const header = (key: SortKey, label: string) => (
-    <button
-      onClick={() => {
-        if (sortKey === key) setSortAsc((v) => !v)
-        else {
-          setSortKey(key)
-          setSortAsc(true)
-        }
-      }}
-      className={`text-left text-[11px] font-semibold uppercase tracking-wider transition-colors duration-150 hover:text-fg ${
-        sortKey === key ? 'text-accent' : 'text-faint'
-      }`}
-    >
-      {label}
-      {sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
-    </button>
-  )
-
   return (
     <div
       className="relative flex h-full flex-col bg-panel"
@@ -483,16 +469,85 @@ export function FilesPanel({
         </div>
       )}
 
-      {/* selection actions */}
-      {/* column headers */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-1.5">
-        <span className="w-4" />
-        <span className="flex-1">{header('name', 'Name')}</span>
-        <span className="w-20 text-right font-mono text-[11px] font-semibold uppercase tracking-wider text-faint">
-          Mode
-        </span>
-        <span className="w-16 text-right">{header('size', 'Size')}</span>
-        <span className="w-24 text-right">{header('modifiedAt', 'Modified')}</span>
+      {/* Column headers. Each column is resizable by dragging its edge, and the
+          visible set is configurable from the menu. Name keeps a minimum width
+          so long filenames can never collapse into a single-letter ellipsis. */}
+      <div className="relative flex shrink-0 items-center gap-1 border-b border-line-soft px-2 py-1.5">
+        <span className="w-4 shrink-0" />
+        {COLUMNS.filter((c) => cols.state.visible[c.key]).map((col) => (
+          <div
+            key={col.key}
+            className={`flex items-center ${
+              col.flexible ? "min-w-[80px] flex-1" : "shrink-0"
+            } ${col.align === "right" ? "justify-end" : "justify-start"}`}
+            style={col.flexible ? undefined : { width: cols.widthOf(col.key) }}
+          >
+            <button
+              onClick={() => {
+                if (col.key !== "mode") {
+                  if (sortKey === col.key) setSortAsc((v) => !v)
+                  else {
+                    setSortKey(col.key)
+                    setSortAsc(true)
+                  }
+                }
+              }}
+              className={`truncate text-[11px] font-semibold uppercase tracking-wider transition-colors duration-150 hover:text-fg ${
+                sortKey === col.key ? "text-accent" : "text-faint"
+              }`}
+            >
+              {col.label}
+              {sortKey === col.key ? (sortAsc ? " ↑" : " ↓") : ""}
+            </button>
+            <ColumnResizer
+              currentWidth={cols.widthOf(col.key)}
+              onResize={(w) => cols.setWidth(col.key, w)}
+            />
+          </div>
+        ))}
+
+        <button
+          onClick={() => setColMenuOpen((v) => !v)}
+          title="Show or hide columns"
+          aria-label="Column settings"
+          className="ml-auto shrink-0 rounded p-1 text-faint transition-colors hover:bg-panel-2 hover:text-fg"
+        >
+          <Columns3 size={13} />
+        </button>
+        {colMenuOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setColMenuOpen(false)} />
+            <div className="absolute right-1 top-full z-40 mt-1 w-44 rounded-lg border border-line bg-panel p-1 shadow-2xl">
+              <p className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">
+                Columns
+              </p>
+              {COLUMNS.map((col) => (
+                <label
+                  key={col.key}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] text-muted hover:bg-panel-2 hover:text-fg"
+                >
+                  <input
+                    type="checkbox"
+                    checked={cols.state.visible[col.key]}
+                    onChange={() => cols.toggleColumn(col.key)}
+                    className="h-3.5 w-3.5 accent-[var(--accent)]"
+                  />
+                  {col.label}
+                </label>
+              ))}
+              <div className="my-1 h-px bg-line-soft" />
+              <button
+                onClick={() => {
+                  cols.resetWidths()
+                  setColMenuOpen(false)
+                }}
+                className="w-full rounded-md px-2 py-1.5 text-left text-[12px] text-muted hover:bg-panel-2 hover:text-fg"
+              >
+                Reset widths
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* listing */}
@@ -560,19 +615,40 @@ export function FilesPanel({
                     ) : (
                       <FileIcon size={14} className="shrink-0 text-faint" />
                     )}
-                    <span className="flex-1 truncate">{entry.name}</span>
-                    <span
-                      className="w-20 shrink-0 text-right font-mono text-[10.5px] text-faint"
-                      title={`chmod ${(entry.permissions & 0o777).toString(8).padStart(3, '0')}`}
-                    >
-                      {octalToRwx(entry.permissions)}
-                    </span>
-                    <span className="w-16 shrink-0 text-right tabular-nums text-faint">
-                      {entry.kind === 'dir' ? '—' : formatBytes(entry.size)}
-                    </span>
-                    <span className="w-24 shrink-0 text-right text-[11px] text-faint">
-                      {new Date(entry.modifiedAt).toLocaleDateString()}
-                    </span>
+                    {/* Name column: min width so it never collapses. */}
+                    {cols.state.visible.name && (
+                      <span className="min-w-[80px] flex-1 truncate" title={entry.name}>
+                        {entry.name}
+                      </span>
+                    )}
+                    {/* Mode: fixed width, only when enabled. */}
+                    {cols.state.visible.mode && (
+                      <span
+                        className="shrink-0 text-right font-mono text-[10.5px] text-faint"
+                        style={{ width: cols.widthOf("mode") }}
+                        title={`chmod ${(entry.permissions & 0o777).toString(8).padStart(3, "0")}`}
+                      >
+                        {octalToRwx(entry.permissions)}
+                      </span>
+                    )}
+                    {/* Size */}
+                    {cols.state.visible.size && (
+                      <span
+                        className="shrink-0 overflow-hidden text-right tabular-nums text-faint"
+                        style={{ width: cols.widthOf("size") }}
+                      >
+                        {entry.kind === "dir" ? "—" : formatBytes(entry.size)}
+                      </span>
+                    )}
+                    {/* Modified */}
+                    {cols.state.visible.modified && (
+                      <span
+                        className="shrink-0 overflow-hidden text-right text-[11px] text-faint"
+                        style={{ width: cols.widthOf("modified") }}
+                      >
+                        {new Date(entry.modifiedAt).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                 </li>
               )

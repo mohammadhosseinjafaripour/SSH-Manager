@@ -628,6 +628,16 @@ export function TerminalView() {
   const closeTab = useSessions((s) => s.closeTab)
   const stripRef = useRef<HTMLDivElement>(null)
   const [filesOpen, setFilesOpen] = useState(false)
+  // Panel width is user-resizable (filenames were unreadable at a fixed 360px)
+  // and persisted so the choice survives restarts.
+  const [filesWidth, setFilesWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('sshvault-files-width'))
+    return Number.isFinite(saved) && saved >= 320 ? saved : 420
+  })
+  useEffect(() => {
+    localStorage.setItem('sshvault-files-width', String(filesWidth))
+  }, [filesWidth])
+  const dragState = useRef<{ startX: number; startW: number } | null>(null)
 
   const activeTab = tabs.find((t) => t.sessionId === active)
   const filesUsable =
@@ -753,13 +763,41 @@ export function TerminalView() {
         </div>
 
         {filesVisible && activeTab && (
-          <aside className="w-[360px] shrink-0 border-l border-line">
+          <>
+          <span
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize files panel"
+            title="Drag to resize"
+            onPointerDown={(e) => {
+              e.preventDefault()
+              dragState.current = { startX: e.clientX, startW: filesWidth }
+              ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => {
+              const d = dragState.current
+              if (!d) return
+              // Dragging left widens the panel (it is anchored on the right).
+              const next = d.startW - (e.clientX - d.startX)
+              setFilesWidth(Math.min(900, Math.max(320, next)))
+            }}
+            onPointerUp={(e) => {
+              dragState.current = null
+              ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+            }}
+            className="w-[3px] shrink-0 cursor-col-resize bg-transparent transition-colors duration-150 hover:bg-accent/50"
+          />
+          <aside
+            className="shrink-0 border-l border-line"
+            style={{ width: filesWidth }}
+          >
             <FilesPanel
               key={activeTab.serverId}
               serverId={activeTab.serverId}
               onClose={() => setFilesOpen(false)}
             />
           </aside>
+          </>
         )}
       </div>
     </div>

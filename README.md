@@ -147,6 +147,11 @@ directory and gives you:
 - **New folder**, **rename**, **chmod** (permission grid), **delete** (recursive, with
   confirmation), sorting by name/size/date, a mode column (`rw-r--r--`), and a path bar
   you can type into.
+- **Readable listing** — the name column keeps a minimum width so long filenames never
+  collapse into an ellipsis; **Mode / Size / Modified** can each be shown, hidden and
+  resized. Drag a column edge in the header to resize it (double-click resets it), use the
+  column button at the right of the header to toggle columns, and drag the divider between
+  the terminal and the panel to make the whole panel wider. Both layouts are remembered.
 - **Conflict handling** — pick overwrite / keep both / skip in the toolbar, or answer a
   prompt when a drop collides with files that already exist.
 
