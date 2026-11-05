@@ -52,6 +52,14 @@ export class SshSession {
   /** Last known PTY size, reapplied after a reconnect. */
   private lastSize = { cols: 80, rows: 24 }
 
+  /**
+   * Command history observed on this session's PTY, oldest first. Used only for
+   * local completion — it never leaves this process.
+   */
+  private history: string[] = []
+  /** Line currently being typed, reconstructed from keystrokes. */
+  private currentLine = ''
+
   constructor(private readonly opts: SshSessionOptions) {}
 
   get serverId(): string {
@@ -384,6 +392,7 @@ export class SshSession {
     switch (msg.type) {
       case 'input':
         this.stream?.write(msg.data)
+        this.trackInput(msg.data)
         return
       case 'resize':
         this.lastSize = { cols: msg.cols, rows: msg.rows }
@@ -404,6 +413,44 @@ export class SshSession {
         }
         return
     }
+  }
+
+  // ---- command history (for local completion) -----------------------------
+
+  /**
+   * Reconstructs the current input line from keystrokes so completion can see
+   * what is being typed. Deliberately simple: only printable characters,
+   * backspace and carriage return are tracked; anything exotic resets the
+   * buffer rather than guessing wrong.
+   */
+  private trackInput(data: string): void {
+    for (const ch of data) {
+      if (ch === '\r' || ch === '\n') {
+        const cmd = this.currentLine.trim()
+        if (cmd) {
+          this.history.push(cmd)
+          if (this.history.length > 500) this.history.shift()
+        }
+        this.currentLine = ''
+      } else if (ch === '\x7f') {
+        this.currentLine = this.currentLine.slice(0, -1)
+      } else if (ch === '\x03' || ch === '\x15') {
+        // Ctrl+C / Ctrl+U both discard the line.
+        this.currentLine = ''
+      } else if (ch >= ' ' && ch !== '\x1b') {
+        this.currentLine += ch
+      }
+    }
+  }
+
+  /** Read-only view of the observed history for the completion engine. */
+  getHistory(): ReadonlyArray<string> {
+    return this.history
+  }
+
+  /** The line currently being typed (best effort). */
+  getCurrentLine(): string {
+    return this.currentLine
   }
 
   // ---- helpers -------------------------------------------------------------

@@ -92,6 +92,20 @@ export function SettingsDialog() {
           </label>
           <label className="flex cursor-pointer items-start justify-between gap-3">
             <span>
+              <span className="block text-[12.5px] text-fg">Inline command suggestions</span>
+              <span className="block text-[11.5px] leading-relaxed text-muted">
+                Ghost-text completions from your history, common commands and remote paths (Tab
+                accepts). Runs entirely on this machine.
+              </span>
+            </span>
+            <Switch
+              label="Inline command suggestions"
+              checked={settings.autocomplete !== false}
+              onCheckedChange={(v) => void updateSettings({ autocomplete: v })}
+            />
+          </label>
+          <label className="flex cursor-pointer items-start justify-between gap-3">
+            <span>
               <span className="block text-[12.5px] text-fg">Auto-reconnect</span>
               <span className="block text-[11.5px] leading-relaxed text-muted">
                 Reconnect automatically when a session drops, keeping its output

@@ -122,6 +122,8 @@ export interface VaultSettings {
   theme: Theme
   /** Send SSH keepalives so NAT/firewalls don't silently drop idle sessions. */
   keepAlive: boolean
+  /** Show local inline command suggestions (ghost text) in the terminal. */
+  autocomplete: boolean
   /** Reconnect automatically when a session drops unexpectedly. */
   autoReconnect: boolean
 }
@@ -235,6 +237,13 @@ export interface ServerTestResult {
   fingerprint?: string
   pinned: boolean
   message: string
+}
+
+/** A single inline completion offered by the terminal. */
+export interface InlineSuggestion {
+  insert: string
+  kind: 'command' | 'flag' | 'path' | 'history' | 'sub'
+  hint?: string
 }
 
 export interface ImportSummary {
@@ -363,6 +372,20 @@ export interface Bridge {
     conflictPolicy?: ConflictPolicy
   }): Promise<{ uploaded: number; remoteDir: string }>
 
+  /**
+   * Inline completion for the terminal. Runs entirely locally in the main
+   * process: command history + a built-in catalog + remote paths. Nothing is
+   * sent anywhere.
+   */
+  complete(input: {
+    serverId: string
+    line: string
+    /** Ask for path candidates from this directory. */
+    pathDir?: string
+    /** 'files' or 'dirs' depending on the command being completed. */
+    pathKind?: 'files' | 'dirs'
+  }): Promise<InlineSuggestion[]>
+
   /** Tests every stored server in parallel; resolves per-server health. */
   healthCheck(input: { serverIds: string[] }): Promise<HealthResult[]>
   /** Opens a file picker and returns a local private key's text. */
@@ -409,6 +432,7 @@ export const BRIDGE_CHANNELS = {
   sftpRename: 'sftp:rename',
   sftpChmod: 'sftp:chmod',
   healthCheck: 'servers:health-check',
+  complete: 'terminal:complete',
   pickKeyFile: 'app:pick-key-file',
   resolveDroppedPaths: 'app:resolve-dropped-paths'
 } as const satisfies Record<string, string>

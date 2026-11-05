@@ -25,6 +25,7 @@ import {
 } from './vault/transfer'
 import { ConnectionManager, healthCheckAll, testConnection } from './ssh/manager'
 import { looksLikePrivateKey } from './ssh/auth'
+import { suggest } from '@shared/completion'
 import {
   chmodRemote,
   closeSftp,
@@ -248,6 +249,51 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
       } finally {
         closeSftp(handle)
       }
+    }
+  )
+
+
+  /**
+   * Inline terminal completion. Local only: history observed on the session plus
+   * a built-in catalog, with remote paths listed over a short-lived SFTP
+   * connection when the command takes a path argument.
+   */
+  handle(
+    'complete',
+    async (input: {
+      serverId: string
+      line: string
+      pathDir?: string
+      pathKind?: 'files' | 'dirs'
+    }) => {
+      const session = manager.findByServer(input.serverId)
+      const history = session?.getHistory() ?? []
+
+      let files: string[] | undefined
+      let dirs: string[] | undefined
+      if (input.pathDir) {
+        try {
+          const sftp = await openSftp(input.serverId, store)
+          try {
+            const entries = await listDir(sftp, input.pathDir)
+            const onlyDirs = entries.filter((e) => e.kind === 'dir').map((e) => e.name)
+            const all = entries.map((e) => e.name)
+            if (input.pathKind === 'dirs') {
+              dirs = onlyDirs
+            } else {
+              files = all
+              dirs = onlyDirs
+            }
+          } finally {
+            closeSftp(sftp)
+          }
+        } catch {
+          // Path listing is best-effort: a failed SFTP round trip must never
+          // break typing. Fall back to catalog + history only.
+        }
+      }
+
+      return suggest({ line: input.line, history, files, dirs, max: 1 })
     }
   )
 

@@ -33,7 +33,7 @@ const defaultState: MockState = {
   created: false,
   masterPassword: '',
   servers: seedServers(),
-  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true },
+  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true },
   pinned: {}
 }
 
@@ -523,6 +523,17 @@ export function createMockBridge(): Bridge {
     sftpUploadToServer: async ({ localPaths }) => {
       await new Promise((r) => setTimeout(r, 700))
       return { uploaded: localPaths.length, remoteDir: '/home/deploy' }
+    },
+    complete: async ({ line }) => {
+      // Browser-mode stand-in for the real local engine.
+      const catalog = ['ls', 'cd', 'cat', 'grep', 'tail', 'systemctl', 'docker', 'git', 'clear', 'pwd']
+      const t = line.trim()
+      if (!t) return []
+      if (!t.includes(' ')) {
+        const hit = catalog.find((c) => c.startsWith(t) && c !== t)
+        return hit ? [{ insert: hit.slice(t.length), kind: 'command' as const }] : []
+      }
+      return []
     },
     pickKeyFile: async () =>
       new Promise((resolve) => {

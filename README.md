@@ -68,6 +68,26 @@ npm run dev:ui     # serves the renderer at http://localhost:5188
   both in the toolbar and in a prompt when a drop collides with existing files.
 - **Rename & chmod** — rename files and folders from the Files panel and edit permissions
   with an owner/group/other checkbox grid (with the octal shown live).
+- **Inline command suggestions (ghost text)** — as you type, a dimmed completion appears
+  after the cursor, Copilot-style. **Tab** accepts it, **Right-arrow** accepts one path
+  segment, **Esc** dismisses. Suggestions come from three local sources, in order: your own
+  command history on that server, a built-in catalog of ~120 commands with their common
+  flags and subcommands (`git`, `docker`, `systemctl`, …), and real remote file paths listed
+  over SFTP. Typical completions:
+
+  | You type | Ghost | Why |
+  | --- | --- | --- |
+  | `clea` | `r` | catalog command |
+  | `ls -l` | `a` | flag of `ls` |
+  | `systemctl re` | `start` | subcommand |
+  | `cd lo` | `gs/` | remote directory (SFTP) |
+  | `tail -f /var/log/ngi` | `nx/error.log` | remote path |
+
+  **It is entirely local — no AI, no API key, no network calls.** Nothing about your
+  commands, servers or files leaves the machine. The only remote request is an SFTP
+  directory listing when a path completion is needed, which goes to the server you are
+  already connected to. Toggle it in **Settings → Connection**.
+
 - **Sessions that survive being away** — SSH keepalives plus a `TMOUT` reset keep idle
   sessions alive through NAT/firewall timeouts, and if a link really dies the session
   **reconnects automatically** with exponential backoff (1s → 30s, forever) while keeping
@@ -163,6 +183,7 @@ always reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 | Paste in terminal | `Ctrl+Shift+V` or `Shift+Insert`; right-click pastes when nothing is selected |
 | Files panel | **Files** button in the tab bar |
 | Find in terminal | `Ctrl+Shift+F` or the magnifier in the tab bar |
+| Accept suggestion | `Tab` (whole) / `Right-arrow` (one segment) / `Esc` dismiss |
 
 ## Security design
 

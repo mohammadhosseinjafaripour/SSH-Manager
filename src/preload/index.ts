@@ -54,6 +54,7 @@ const api: Bridge = {
   sftpRename: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpRename, input),
   sftpChmod: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.sftpChmod, input),
   healthCheck: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.healthCheck, input),
+  complete: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.complete, input),
   pickKeyFile: () => ipcRenderer.invoke(BRIDGE_CHANNELS.pickKeyFile),
   resolveDroppedPaths: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.resolveDroppedPaths, input),
 

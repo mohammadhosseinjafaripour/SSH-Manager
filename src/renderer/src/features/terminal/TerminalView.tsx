@@ -19,7 +19,8 @@ import {
 import { FilesPanel } from '../files/FilesPanel'
 import { Button } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
-import { serverById } from '../../stores/vault'
+import { serverById, useVault } from '../../stores/vault'
+import { useInlineCompletion } from './useInlineCompletion'
 import {
   registerTerminalWriter,
   sessionPorts,
@@ -186,6 +187,11 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
   // the search bar mounts; a ref read there would be unsafe under concurrent
   // rendering.
   const [search, setSearch] = useState<SearchAddon | null>(null)
+  const autocompleteOn = useVault((st) => st.settings.autocomplete !== false)
+  const completion = useInlineCompletion({ serverId: tab.serverId, enabled: autocompleteOn })
+  // Where to paint the ghost: the cursor cell, measured from the renderer's
+  // own dimensions (cell size = screen width / cols).
+  const [cursorPos, setCursorPos] = useState<{ left: number; top: number } | null>(null)
   // Visibility lives in the store so the toolbar button, the keyboard shortcut
   // and the pane all agree without effects or ref reads.
   const searchOpen = useSessions((s) => s.searchFor) === tab.sessionId
@@ -288,6 +294,27 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
     setSearch(searchAddon)
     term.open(host)
 
+    /** Repositions the ghost overlay on the cursor cell. */
+    const syncCursor = () => {
+      try {
+        const buf = term.buffer.active
+        const screenEl = host.querySelector('.xterm-screen') as HTMLElement | null
+        if (!buf || !screenEl) return
+        const rect = screenEl.getBoundingClientRect()
+        const cellW = rect.width / Math.max(1, term.cols)
+        const cellH = rect.height / Math.max(1, term.rows)
+        setCursorPos({
+          left: rect.left + buf.cursorX * cellW,
+          top: rect.top + buf.cursorY * cellH
+        })
+      } catch {
+        // Terminal not laid out yet; the next cursor move retries.
+      }
+    }
+    term.onCursorMove(syncCursor)
+    term.onResize(syncCursor)
+    syncCursor()
+
     const port = sessionPorts.get(tab.sessionId)
     let lastActivitySent = 0
 
@@ -342,6 +369,30 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
 
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
+      // Tab accepts the ghost suggestion when one is showing; otherwise Tab
+      // falls through to the remote shell's own completion.
+      if (ev.code === 'Tab' && !ev.ctrlKey && !ev.altKey && completion.ghost) {
+        const accepted = completion.accept()
+        if (accepted) {
+          port?.send({ type: 'input', data: accepted })
+          completion.feed(accepted)
+        }
+        return false
+      }
+      // Right arrow accepts just the next word/segment, like fish/zsh.
+      if (ev.code === 'ArrowRight' && !ev.ctrlKey && !ev.altKey && completion.ghost) {
+        const part = completion.acceptWord()
+        if (part) {
+          port?.send({ type: 'input', data: part })
+          completion.feed(part)
+        }
+        return false
+      }
+      // Esc dismisses the suggestion without touching the shell.
+      if (ev.code === 'Escape' && completion.ghost) {
+        completion.clear()
+        return false
+      }
       // Ctrl+Shift+F opens the in-terminal search (plain Ctrl+F still reaches
       // the remote shell, e.g. readline's forward-char).
       if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyF') {
@@ -464,6 +515,23 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
         </div>
       )}
 
+      {/* Inline completion ghost text. Rendered as an overlay, never written
+          into the terminal buffer — a wrong guess can never corrupt the PTY. */}
+      {completion.ghost && cursorPos && (
+        <div
+          className="pointer-events-none absolute z-20 whitespace-pre font-mono text-[13px] leading-[1.25] text-muted/55"
+          style={{ left: cursorPos.left, top: cursorPos.top }}
+          aria-hidden="true"
+        >
+          {completion.ghost.text}
+          {completion.ghost.hint && (
+            <span className="ml-2 text-[10.5px] text-faint/70">{completion.ghost.hint}</span>
+          )}
+          <span className="ml-1.5 rounded border border-line/70 px-1 text-[9px] uppercase tracking-wide text-faint/60">
+            tab
+          </span>
+        </div>
+      )}
       {searchOpen && search && (
         <SearchBar search={search} onClose={closeSearch} />
       )}

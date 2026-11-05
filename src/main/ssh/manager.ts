@@ -40,6 +40,14 @@ export class ConnectionManager {
     this.sessions.get(sessionId)?.destroy()
   }
 
+  /** Finds the live session for a server (used by terminal completion). */
+  findByServer(serverId: string): SshSession | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.serverId === serverId) return session
+    }
+    return undefined
+  }
+
   closeAll(): void {
     for (const s of this.sessions.values()) s.destroy()
     this.sessions.clear()
