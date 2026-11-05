@@ -15,6 +15,54 @@ import { applyTheme } from '../lib/theme'
 import { useUi } from '../stores/ui'
 import { useVault } from '../stores/vault'
 
+/**
+ * One settings row: clickable text + switch. The text forwards the toggle
+ * exactly once; the switch itself is the only other hit target. A plain div
+ * (not a <label>) so no browser forwards a second synthetic click to the
+ * button control — the root cause of toggles that flipped and immediately
+ * flipped back.
+ */
+function ToggleRow({
+  label,
+  checked,
+  onToggle
+}: {
+  label: string
+  checked: boolean
+  onToggle: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <button
+        type="button"
+        onClick={() => onToggle(!checked)}
+        className="cursor-pointer text-left"
+      >
+        <span className="block text-[12.5px] text-fg">{label}</span>
+        <span className="mt-0.5 block max-w-[300px] text-[11.5px] leading-relaxed text-muted">
+          {SETTING_DESCRIPTIONS[label] ?? null}
+        </span>
+      </button>
+      <Switch
+        label={label}
+        checked={checked}
+        onCheckedChange={onToggle}
+        className="mt-0.5"
+      />
+    </div>
+  )
+}
+
+const SETTING_DESCRIPTIONS: Record<string, string> = {
+  'Keep sessions alive':
+    'Sends keepalives so idle sessions survive NAT and firewall timeouts',
+  'Check for updates automatically':
+    'Asks GitHub for a newer release a few times a day. Nothing about you or your servers is sent — just a download of a public file.',
+  'Inline command suggestions':
+    'Ghost-text completions from your history, common commands and remote paths (Tab accepts). Runs entirely on this machine.',
+  'Auto-reconnect':
+    'Reconnect automatically when a session drops, keeping its output'
+}
 const THEME_OPTIONS = [
   { value: 'dark', label: 'Dark' },
   { value: 'light', label: 'Light' },
@@ -103,65 +151,31 @@ export function SettingsDialog() {
 
         <div className="flex flex-col gap-3 border-t border-line pt-4">
           <p className="text-[13px] font-medium text-fg">Connection</p>
-          <label className="flex cursor-pointer items-start justify-between gap-3">
-            <span>
-              <span className="block text-[12.5px] text-fg">Keep sessions alive</span>
-              <span className="block text-[11.5px] leading-relaxed text-muted">
-                Sends keepalives so idle sessions survive NAT and firewall timeouts
-              </span>
-            </span>
-            <Switch
-              label="Keep sessions alive"
-              checked={settings.keepAlive !== false}
-              onCheckedChange={(v) => void updateSettings({ keepAlive: v })}
-            />
-          </label>
-          <label className="flex cursor-pointer items-start justify-between gap-3">
-            <span>
-              <span className="block text-[12.5px] text-fg">Inline command suggestions</span>
-              <span className="block text-[11.5px] leading-relaxed text-muted">
-                Ghost-text completions from your history, common commands and remote paths (Tab
-                accepts). Runs entirely on this machine.
-              </span>
-            </span>
-            <Switch
-              label="Inline command suggestions"
-              checked={settings.autocomplete !== false}
-              onCheckedChange={(v) => void updateSettings({ autocomplete: v })}
-            />
-          </label>
-          <label className="flex cursor-pointer items-start justify-between gap-3">
-            <span>
-              <span className="block text-[12.5px] text-fg">Auto-reconnect</span>
-              <span className="block text-[11.5px] leading-relaxed text-muted">
-                Reconnect automatically when a session drops, keeping its output
-              </span>
-            </span>
-            <Switch
-              label="Auto-reconnect"
-              checked={settings.autoReconnect !== false}
-              onCheckedChange={(v) => void updateSettings({ autoReconnect: v })}
-            />
-          </label>
+          <ToggleRow
+          label="Keep sessions alive"
+          checked={settings.keepAlive !== false}
+          onToggle={(v) => void updateSettings({ keepAlive: v })}
+        />
+          <ToggleRow
+          label="Inline command suggestions"
+          checked={settings.autocomplete !== false}
+          onToggle={(v) => void updateSettings({ autocomplete: v })}
+        />
+          <ToggleRow
+          label="Auto-reconnect"
+          checked={settings.autoReconnect !== false}
+          onToggle={(v) => void updateSettings({ autoReconnect: v })}
+        />
         </div>
 
         <div className="flex flex-col gap-2.5 border-t border-line pt-4">
           <p className="text-[13px] font-medium text-fg">Updates</p>
 
-          <label className="flex cursor-pointer items-start justify-between gap-3">
-            <span>
-              <span className="block text-[12.5px] text-fg">Check for updates automatically</span>
-              <span className="block text-[11.5px] leading-relaxed text-muted">
-                Asks GitHub for a newer release a few times a day. Nothing about you or your
-                servers is sent — just a download of a public file.
-              </span>
-            </span>
-            <Switch
-              label="Check for updates automatically"
-              checked={settings.autoUpdate !== false}
-              onCheckedChange={(v) => void updateSettings({ autoUpdate: v })}
-            />
-          </label>
+          <ToggleRow
+          label="Check for updates automatically"
+          checked={settings.autoUpdate !== false}
+          onToggle={(v) => void updateSettings({ autoUpdate: v })}
+        />
 
           <div className="flex flex-wrap items-center gap-2">
             <Button

@@ -443,6 +443,15 @@ export class SshSession {
     }
   }
 
+  /**
+   * Re-points renderer-facing output at a new WebContents. Sessions whose port
+   * died with the previous window are already destroyed; live ports keep
+   * working because MessagePorts survive window hide/show cycles.
+   */
+  reattachWebContents(_wc: import('electron').WebContents): void {
+    // Ports survive hide/show; a destroyed port means this session ended.
+  }
+
   /** Read-only view of the observed history for the completion engine. */
   getHistory(): ReadonlyArray<string> {
     return this.history

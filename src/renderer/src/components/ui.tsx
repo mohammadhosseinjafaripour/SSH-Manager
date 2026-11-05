@@ -1,15 +1,15 @@
 import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import * as SwitchPrimitive from '@radix-ui/react-switch'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { Check, ChevronDown, Eye, EyeOff, Loader2, X } from 'lucide-react'
 import { generatePassword } from '@shared/schemas'
+import { Switch as BeUISwitch } from './beui/Switch'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type ButtonSize = 'sm' | 'md'
 
 const buttonBase =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none select-none'
+  'inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none select-none'
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: 'bg-accent text-accent-fg hover:bg-accent-strong',
@@ -186,7 +186,7 @@ export function Dialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="overlay-in fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
-          className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-panel p-6 shadow-2xl`}
+          className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-line bg-panel p-6 shadow-2xl`}
         >
           {title ? (
             <div className="mb-4 flex items-start justify-between gap-4">
@@ -222,25 +222,24 @@ export function Dialog({
 Dialog.Title = DialogPrimitive.Title
 Dialog.Description = DialogPrimitive.Description
 
-export function Switch({
-  checked,
-  onCheckedChange,
-  label
-}: {
+/**
+ * Re-export of the vendored beUI switch (see components/beui/Switch.tsx).
+ *
+ * Fully prop-driven: the visual state derives only from `checked`, so it can
+ * never desync from the persisted setting the way the Radix internal state
+ * did (the reported "toggle flips but never sticks" bug). API-compatible
+ * with the previous component, so call sites are unchanged.
+ */
+export function Switch(props: {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
-  label: string
+  label?: string
+  disabled?: boolean
+  className?: string
 }) {
-  return (
-    <SwitchPrimitive.Root
-      checked={checked}
-      onCheckedChange={onCheckedChange}
-      aria-label={label}
-      className="relative h-[22px] w-[38px] rounded-full border border-line bg-inset transition-colors duration-150 data-[state=checked]:border-accent data-[state=checked]:bg-accent"
-    >
-      <SwitchPrimitive.Thumb className="block h-[16px] w-[16px] translate-x-[3px] rounded-full bg-muted transition-transform duration-150 data-[state=checked]:translate-x-[19px] data-[state=checked]:bg-accent-fg" />
-    </SwitchPrimitive.Root>
-  )
+  // `label` maps to aria-label only: call sites render their own visible row
+  // text, and beUI would otherwise paint the label next to the toggle again.
+  return <BeUISwitch {...props} label={undefined} ariaLabel={props.label} />
 }
 
 export interface SelectOption {

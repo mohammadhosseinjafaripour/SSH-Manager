@@ -96,3 +96,4 @@ describe('visibility rules', () => {
     expect(toggle(some, 'mode').mode).toBe(true)
   })
 })
+

@@ -3,6 +3,7 @@ import { Client } from 'ssh2'
 import { SESSION_PORT_CHANNEL } from '@shared/types'
 import type { HealthResult, ServerEntry, TestConnectionResult } from '@shared/types'
 import type { VaultStore } from '../vault/store'
+import { isLiveSessionStatus } from '@shared/session-status'
 import { checkPin, fingerprintOf } from '../hostkeys/verifier'
 import { authConfig } from './auth'
 import { SshSession } from './session'
@@ -17,7 +18,7 @@ export class ConnectionManager {
 
   constructor(
     private readonly store: VaultStore,
-    private readonly wc: WebContents
+    private wc: WebContents
   ) {}
 
   open(serverId: string): { sessionId: string } {
@@ -38,6 +39,36 @@ export class ConnectionManager {
 
   close(sessionId: string): void {
     this.sessions.get(sessionId)?.destroy()
+  }
+
+  /**
+   * Whether any session is attached to a remote shell. The tray uses this to
+   * decide if closing the window should hide instead of exit.
+   */
+  hasLiveSessions(): boolean {
+    for (const session of this.sessions.values()) {
+      if (isLiveSessionStatus(session.currentStatus)) return true
+    }
+    return false
+  }
+
+  countLiveSessions(): number {
+    let n = 0
+    for (const session of this.sessions.values()) {
+      if (isLiveSessionStatus(session.currentStatus)) n++
+    }
+    return n
+  }
+
+  /**
+   * Re-targets manager output (session ports, update broadcasts) at a new
+   * window's WebContents after the old window was destroyed.
+   */
+  refreshWebContents(wc: WebContents): void {
+    this.wc = wc
+    for (const session of this.sessions.values()) {
+      session.reattachWebContents(wc)
+    }
   }
 
   /** Finds the live session for a server (used by terminal completion). */

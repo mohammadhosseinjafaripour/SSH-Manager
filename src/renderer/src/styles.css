@@ -56,6 +56,11 @@
 
 @theme inline {
   --color-bg: var(--bg);
+  /* shadcn-style aliases: vendored beUI components use these token names. */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-muted-foreground: var(--muted);
+  --color-ring: var(--accent);
   --color-panel: var(--panel);
   --color-panel-2: var(--panel-2);
   --color-inset: var(--inset);

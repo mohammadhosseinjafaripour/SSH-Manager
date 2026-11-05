@@ -17,6 +17,10 @@ files:
   - "!**/.vscode/*"
   - "!src/*"
   - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+# Tray icon must be a real file at runtime (the tray reads it from disk).
+extraResources:
+  - from: build/icon.png
+    to: icons/icon.png
 asarUnpack:
   - resources/**
   - node_modules/@node-rs/**

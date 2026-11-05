@@ -177,6 +177,15 @@ multi-GB uploads don't exhaust memory. A separate SSH connection is opened for S
 large transfer never competes with your interactive shell for window space. The host key
 is checked against the same pin as the terminal, and a **changed** key is refused.
 
+## System tray
+
+Closing the window while sessions are connected does **not** exit the app — it hides to
+the system tray and your connections keep running. A balloon explains it the first time;
+the tray tooltip shows the live-session count.
+
+- Click the tray icon (or **Show SSH Vault** in its menu) to reopen the window
+- **Quit (closes all sessions)** ends every connection and exits the app
+- Closing the window with **nothing** connected exits normally, as expected
 ## Updates
 
 SSH Vault updates itself from GitHub Releases — no links in chat, no manual

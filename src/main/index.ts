@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, Tray } from 'electron'
 import { join } from 'node:path'
 import { VAULT_LOCKED_CHANNEL } from '@shared/types'
 import { registerIpc } from './ipc'
@@ -25,6 +25,76 @@ let store: VaultStore | null = null
 let manager: ConnectionManager | null = null
 let lockTimer: ReturnType<typeof setInterval> | null = null
 let updater: UpdateService | null = null
+let tray: Tray | null = null
+let forceQuit = false
+let trayNoticeShown = false
+
+/**
+ * Tray icon. While SSH sessions are alive, closing the window only hides it;
+ * the tray keeps the app (and the connections) running, and its Quit action
+ * ends everything explicitly.
+ */
+function trayIcon(): Electron.NativeImage {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, "icons", "icon.png")
+    : join(app.getAppPath(), 'build', 'icon.png')
+  const img = nativeImage.createFromPath(iconPath)
+  return img.isEmpty() ? nativeImage.createEmpty() : img.resize({ width: 16, height: 16 })
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow()
+    if (store && manager) manager.refreshWebContents(mainWindow.webContents)
+  }
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  tray = new Tray(trayIcon())
+  tray.setToolTip('SSH Vault')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show SSH Vault', click: () => showMainWindow() },
+      { type: "separator" },
+      {
+        label: 'Quit (closes all sessions)',
+        click: () => {
+          forceQuit = true
+          app.quit()
+        }
+      }
+    ])
+  )
+  tray.on('click', () => showMainWindow())
+  tray.on('double-click', () => showMainWindow())
+}
+
+/**
+ * Window close: with live sessions, hide to the tray and say so once. With
+ * nothing connected, exit normally — exactly the behavior requested: the app
+ * stays reachable from the tray only for as long as connections exist.
+ */
+function handleWindowClose(win: BrowserWindow): void {
+  if (forceQuit) return
+  const live = manager?.countLiveSessions() ?? 0
+  if (live === 0) return
+  win.hide()
+  tray?.setToolTip(`SSH Vault — ${live} live session${live === 1 ? '' : 's'}`)
+  if (!trayNoticeShown) {
+    trayNoticeShown = true
+    try {
+      tray?.displayBalloon({
+        iconType: 'info',
+        title: 'SSH Vault is still connected',
+        content: 'Your sessions keep running in the system tray. Quit from the tray menu to close everything.'
+      })
+    } catch {
+      // displayBalloon is Windows-only; elsewhere the tray tooltip suffices.
+    }
+  }
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -47,6 +117,7 @@ function createWindow(): BrowserWindow {
   })
 
   win.on('ready-to-show', () => win.show())
+  win.on('close', () => handleWindowClose(win))
 
   // The app renders exactly one origin: block navigation and pop-ups.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -102,6 +173,8 @@ app.whenReady().then(() => {
   registerUpdateIpc(updater)
   updater.start()
 
+  createTray()
+
   startAutoLock()
 
   app.on('activate', () => {
@@ -116,7 +189,9 @@ app.on('window-all-closed', () => {
   if (lockTimer) clearInterval(lockTimer)
   manager?.closeAll()
   store?.lock()
-  app.quit()
+  // With a tray, the app stays alive so the user can reopen it. Without one
+  // (never created), exiting is the expected end.
+  if (!tray) app.quit()
 })
 
 app.on('before-quit', () => {
