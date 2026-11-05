@@ -39,7 +39,11 @@ win:
 nsis:
   oneClick: true
   deleteAppDataOnUninstall: false
-  artifactName: ${productName}-${version}-setup.${ext}
+  # Hyphens, not the productName's space. electron-updater builds download URLs
+  # from the file names in latest.yml; a space here becomes an unresolvable URL
+  # on GitHub and every client's update check fails with a 404 — silently, with
+  # no error shown to the user. Keep the artifact name URL-safe.
+  artifactName: SSH-Vault-${version}-setup.${ext}
 portable:
-  artifactName: ${productName}-${version}-portable.${ext}
+  artifactName: SSH-Vault-${version}-portable.${ext}
 afterPack: ./scripts/fuses.cjs
