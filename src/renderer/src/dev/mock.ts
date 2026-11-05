@@ -524,14 +524,45 @@ export function createMockBridge(): Bridge {
       await new Promise((r) => setTimeout(r, 700))
       return { uploaded: localPaths.length, remoteDir: '/home/deploy' }
     },
+    // Browser-mode stand-in for the real local engine (which lives in main).
+    // Mirrors its multi-candidate shape so cycling can be exercised here.
     complete: async ({ line }) => {
-      // Browser-mode stand-in for the real local engine.
-      const catalog = ['ls', 'cd', 'cat', 'grep', 'tail', 'systemctl', 'docker', 'git', 'clear', 'pwd']
-      const t = line.trim()
-      if (!t) return []
-      if (!t.includes(' ')) {
-        const hit = catalog.find((c) => c.startsWith(t) && c !== t)
-        return hit ? [{ insert: hit.slice(t.length), kind: 'command' as const }] : []
+      const catalog = [
+        'ls', 'less', 'ln', 'cat', 'cd', 'chmod', 'chown', 'clear', 'cp', 'curl',
+        'grep', 'tail', 'systemctl', 'docker', 'git', 'pwd', 'df', 'du', 'top'
+      ]
+      const subs: Record<string, string[]> = {
+        git: ['status', 'pull', 'push', 'fetch', 'log --oneline', 'diff'],
+        systemctl: ['status', 'start', 'stop', 'restart', 'reload', 'enable'],
+        docker: ['ps', 'images', 'logs -f', 'exec -it', 'compose']
+      }
+      const flags: Record<string, string[]> = {
+        ls: ['-la', '-l', '-a', '-lh', '-lah', '-R'],
+        grep: ['-r', '-rn', '-i', '-v', '-n'],
+        tail: ['-n 20', '-f', '-F']
+      }
+      const t = line
+      if (!t.trim()) return []
+      const endsWithSpace = /\s$/.test(t)
+      const tokens = t.trim().split(/s+/)
+      const cur = endsWithSpace ? '' : (tokens[tokens.length - 1] ?? '')
+
+      // subcommand position
+      if (tokens.length === 1 && endsWithSpace && subs[tokens[0]]) {
+        return subs[tokens[0]].map((v) => ({ insert: v, kind: 'sub' as const }))
+      }
+      // flag position
+      if (cur.startsWith('-') && flags[tokens[0]]) {
+        return flags[tokens[0]]
+          .filter((f) => f.startsWith(cur) && f !== cur)
+          .map((f) => ({ insert: f.slice(cur.length), kind: 'flag' as const }))
+      }
+      // command name
+      if (tokens.length === 1 && !endsWithSpace) {
+        return catalog
+          .filter((c) => c.startsWith(cur) && c !== cur)
+          .slice(0, 8)
+          .map((c) => ({ insert: c.slice(cur.length), kind: 'command' as const }))
       }
       return []
     },

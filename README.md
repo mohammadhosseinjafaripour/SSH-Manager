@@ -83,6 +83,10 @@ npm run dev:ui     # serves the renderer at http://localhost:5188
   | `cd lo` | `gs/` | remote directory (SFTP) |
   | `tail -f /var/log/ngi` | `nx/error.log` | remote path |
 
+  **Several candidates?** When more than one match exists (e.g. `git ` or `ls -`), the first is
+  shown as the ghost with a `1/6` counter — press **↑/↓** to cycle through the alternatives,
+  then **Tab** to accept the highlighted one.
+
   **It is entirely local — no AI, no API key, no network calls.** Nothing about your
   commands, servers or files leaves the machine. The only remote request is an SFTP
   directory listing when a path completion is needed, which goes to the server you are
@@ -184,6 +188,7 @@ always reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 | Files panel | **Files** button in the tab bar |
 | Find in terminal | `Ctrl+Shift+F` or the magnifier in the tab bar |
 | Accept suggestion | `Tab` (whole) / `Right-arrow` (one segment) / `Esc` dismiss |
+| Cycle suggestions | `Up` / `Down` while a ghost is showing |
 
 ## Security design
 

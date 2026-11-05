@@ -293,7 +293,9 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
         }
       }
 
-      return suggest({ line: input.line, history, files, dirs, max: 1 })
+      // Return the full ranked list so the UI can let the user pick with
+      // Up/Down; the renderer shows the first one as the ghost by default.
+      return suggest({ line: input.line, history, files, dirs, max: 8 })
     }
   )
 

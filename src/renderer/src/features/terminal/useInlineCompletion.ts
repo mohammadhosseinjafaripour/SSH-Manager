@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { InlineSuggestion } from '@shared/types'
 
 /**
  * Inline "ghost text" completion for the terminal.
  *
  * The whole loop is local: keystrokes are mirrored into a line buffer, a
- * debounced request asks the main process for a suggestion, and the result is
- * painted as an overlay at the cursor — never written into the terminal buffer,
- * so a wrong guess can never corrupt the remote session.
+ * debounced request asks the main process for ranked suggestions, and the
+ * selected one is painted as an overlay at the cursor — never written into the
+ * terminal buffer, so a wrong guess can never corrupt the remote session.
  *
- * Why a hook: the terminal component is already large, and this state must be
- * reset consistently when the pane is torn down.
+ * Up/Down cycle through the candidate list (like an IDE popup); Tab accepts the
+ * highlighted one.
  */
 
 const DEBOUNCE_MS = 120
@@ -29,7 +30,8 @@ interface Options {
 }
 
 export function useInlineCompletion({ serverId, enabled }: Options) {
-  const [ghost, setGhost] = useState<Ghost | null>(null)
+  const [suggestions, setSuggestions] = useState<InlineSuggestion[]>([])
+  const [activeIndex, setActiveIndex] = useState(0)
   const lineRef = useRef('')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Guards against out-of-order responses overwriting a newer suggestion. */
@@ -41,7 +43,8 @@ export function useInlineCompletion({ serverId, enabled }: Options) {
       timer.current = null
     }
     token.current++
-    setGhost(null)
+    setSuggestions([])
+    setActiveIndex(0)
   }, [])
 
   useEffect(
@@ -51,29 +54,33 @@ export function useInlineCompletion({ serverId, enabled }: Options) {
     []
   )
 
-  /** Ask for a suggestion for `line`, debounced. */
+  /** Ask for suggestions for `line`, debounced. Resets to the best candidate. */
   const request = useCallback(
     (line: string) => {
       if (!enabled) {
-        setGhost(null)
+        setSuggestions([])
         return
       }
       if (timer.current) clearTimeout(timer.current)
       const myToken = ++token.current
       if (!line.trim() || line.trim().length < MIN_CHARS) {
-        setGhost(null)
+        setSuggestions([])
+        setActiveIndex(0)
         return
       }
       timer.current = setTimeout(() => {
         window.sshvault
           .complete({ serverId, line })
           .then((res) => {
-            if (myToken !== token.current) return // superseded
-            const best = res[0]
-            setGhost(best?.insert ? { text: best.insert, hint: best.hint } : null)
+            if (myToken !== token.current) return // superseded by newer input
+            setSuggestions(res.filter((s) => s.insert.length > 0))
+            setActiveIndex(0)
           })
           .catch(() => {
-            if (myToken === token.current) setGhost(null)
+            if (myToken === token.current) {
+              setSuggestions([])
+              setActiveIndex(0)
+            }
           })
       }, DEBOUNCE_MS)
     },
@@ -82,7 +89,7 @@ export function useInlineCompletion({ serverId, enabled }: Options) {
 
   /**
    * Feeds typed data into the line buffer and refreshes the suggestion.
-   * Returns the updated line so callers can decide about Tab/Enter handling.
+   * Typing always resets the highlight to the best guess.
    */
   const feed = useCallback(
     (data: string) => {
@@ -107,31 +114,65 @@ export function useInlineCompletion({ serverId, enabled }: Options) {
     [clear, request]
   )
 
+  /** Current suggestion, or null when the list is empty. */
+  const ghost: Ghost | null = (() => {
+    const s = suggestions[activeIndex]
+    if (!s?.insert) return null
+    return { text: s.insert, hint: s.hint }
+  })()
+
   /**
-   * Accepts the current suggestion. Returns the text that was sent so the
+   * Moves the highlight through the candidate list, wrapping at both ends.
+   * Returns true when the list was actually navigated (so the caller knows to
+   * swallow the arrow key instead of sending it to the shell).
+   */
+  const cycle = useCallback(
+    (direction: 1 | -1): boolean => {
+      if (suggestions.length === 0) return false
+      setActiveIndex((i) => {
+        const next = (i + direction + suggestions.length) % suggestions.length
+        return next
+      })
+      return true
+    },
+    [suggestions.length]
+  )
+
+  /**
+   * Accepts the highlighted suggestion. Returns the text that was sent so the
    * caller can forward it to the PTY.
    */
   const accept = useCallback((): string | null => {
-    const g = ghost
-    if (!g) return null
-    lineRef.current += g.text
+    const s = suggestions[activeIndex]
+    if (!s?.insert) return null
+    lineRef.current += s.insert
     clear()
-    return g.text
-  }, [ghost, clear])
+    return s.insert
+  }, [suggestions, activeIndex, clear])
 
   /** Accepts only up to the next path/word boundary (like fish/zsh). */
   const acceptWord = useCallback((): string | null => {
-    const g = ghost
-    if (!g) return null
-    const boundary = g.text.search(/[/\s-]/)
-    const part = boundary === -1 ? g.text : g.text.slice(0, boundary + 1)
+    const s = suggestions[activeIndex]
+    if (!s?.insert) return null
+    const boundary = s.insert.search(/[/\s-]/)
+    const part = boundary === -1 ? s.insert : s.insert.slice(0, boundary + 1)
     if (!part) return null
     lineRef.current += part
     clear()
     return part
-  }, [ghost, clear])
+  }, [suggestions, activeIndex, clear])
 
   const currentLine = () => lineRef.current
 
-  return { ghost, feed, accept, acceptWord, clear, currentLine }
+  return {
+    ghost,
+    suggestions,
+    activeIndex,
+    cycle,
+    feed,
+    accept,
+    acceptWord,
+    clear,
+    currentLine
+  }
 }

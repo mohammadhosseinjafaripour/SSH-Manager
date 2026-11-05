@@ -379,6 +379,12 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
         }
         return false
       }
+      // Up/Down cycle through the candidate list while a suggestion is showing.
+      // When there is no suggestion they fall through to shell history.
+      if ((ev.code === 'ArrowUp' || ev.code === 'ArrowDown') && !ev.ctrlKey && !ev.altKey) {
+        const moved = completion.cycle(ev.code === 'ArrowDown' ? 1 : -1)
+        if (moved) return false
+      }
       // Right arrow accepts just the next word/segment, like fish/zsh.
       if (ev.code === 'ArrowRight' && !ev.ctrlKey && !ev.altKey && completion.ghost) {
         const part = completion.acceptWord()
@@ -527,8 +533,13 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
           {completion.ghost.hint && (
             <span className="ml-2 text-[10.5px] text-faint/70">{completion.ghost.hint}</span>
           )}
+          {completion.suggestions.length > 1 && (
+            <span className="ml-1.5 text-[10px] tabular-nums text-faint/60">
+              {completion.activeIndex + 1}/{completion.suggestions.length}
+            </span>
+          )}
           <span className="ml-1.5 rounded border border-line/70 px-1 text-[9px] uppercase tracking-wide text-faint/60">
-            tab
+            {completion.suggestions.length > 1 ? 'tab · ↑↓' : 'tab'}
           </span>
         </div>
       )}

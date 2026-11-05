@@ -84,3 +84,64 @@ describe('acceptance semantics', () => {
     expect(line).toBe('cd /var/www/site')
   })
 })
+
+
+describe('candidate cycling (Up/Down)', () => {
+  /**
+   * Mirrors useInlineCompletion.cycle(): wrap-around navigation over the ranked
+   * list. Typing always resets the highlight to index 0, so the best guess is
+   * the default and arrows only refine it.
+   */
+  function cycle(index: number, count: number, direction: 1 | -1) {
+    if (count === 0) return { index, handled: false }
+    return { index: (index + direction + count) % count, handled: true }
+  }
+
+  const list = ['r', 'm', 'ads', 'ar']
+
+  it('Down moves forward and wraps at the end', () => {
+    expect(cycle(0, list.length, 1).index).toBe(1)
+    expect(cycle(3, list.length, 1).index).toBe(0)
+  })
+
+  it('Up moves backward and wraps at the start', () => {
+    expect(cycle(0, list.length, -1).index).toBe(3)
+    expect(cycle(2, list.length, -1).index).toBe(1)
+  })
+
+  it('does not swallow the arrow key when there is nothing to cycle', () => {
+    // With no suggestion, Up/Down must reach the shell (history recall).
+    expect(cycle(0, 0, 1).handled).toBe(false)
+    expect(cycle(0, 0, -1).handled).toBe(false)
+  })
+
+  it('accepts whichever candidate is highlighted', () => {
+    const accept = (index: number) => list[index]
+    // Index 0 is the default (best guess); Down then accepts the second option.
+    expect(accept(0)).toBe('r')
+    expect(accept(cycle(0, list.length, 1).index)).toBe('m')
+  })
+})
+
+describe('multiple candidates from the engine', () => {
+  it('returns several distinct options for an ambiguous prefix', async () => {
+    const { suggest } = await import('../shared/completion')
+    const list = suggest({ line: 'c', history: [] })
+    const inserts = list.map((s) => s.insert)
+    expect(inserts.length).toBeGreaterThan(1)
+    expect(new Set(inserts).size).toBe(inserts.length)
+  })
+
+  it('offers alternate flags to pick from', async () => {
+    const { suggest } = await import('../shared/completion')
+    const list = suggest({ line: 'ls -', history: [] })
+    expect(list.length).toBeGreaterThan(1)
+    expect(list.every((s) => s.kind === 'flag')).toBe(true)
+  })
+
+  it('caps the list so the popup stays navigable', async () => {
+    const { suggest } = await import('../shared/completion')
+    const list = suggest({ line: 'c', history: [], max: 8 })
+    expect(list.length).toBeLessThanOrEqual(8)
+  })
+})
