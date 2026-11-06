@@ -14,17 +14,25 @@
 }
 /* Centered with auto margins (like a native modal dialog) so transform stays free for the entrance spring.
  * Width comes from --dialog-width, which the wrapper sets per call site
- * (the app's dialogs range from max-w-sm to max-w-lg). */
+ * (the app's dialogs range from max-w-sm to max-w-lg).
+ *
+ * The frame itself never scrolls: scrolling is moved to .body. Putting
+ * `overflow: auto` here drew the scrollbar track down the full height of an
+ * element with a 28px radius, so it cut across both rounded corners, and the
+ * header scrolled away with the form. Now the header stays pinned and the
+ * scrollbar lives inside the body, clear of the corners. */
 .content {
   position: fixed;
   z-index: 51;
   inset: 0;
+  display: flex;
+  flex-direction: column;
   width: min(calc(100vw - 32px), var(--dialog-width, 440px));
   height: fit-content;
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   margin: auto;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 28px;
   background: var(--panel);
@@ -55,6 +63,8 @@
   pointer-events: none !important;
 }
 .header {
+  /* Pinned: the body scrolls underneath instead of carrying the header away. */
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -120,9 +130,19 @@
     transform var(--duration-instant) var(--ease-standard);
 }
 .body {
+  /* Owns the scrolling so the header can stay pinned and the scrollbar never
+   * crosses the dialog's rounded corners. `min-height: 0` lets a flex child
+   * actually shrink and scroll instead of overflowing its parent. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: 24px;
   font-size: 13px;
   line-height: 1.6;
+}
+/* Inset the track so it cannot touch the dialog's rounded corners. */
+.body::-webkit-scrollbar-track {
+  margin-block: 12px;
 }
 /* When the caller renders its own header, the floating close button sits over
  * the top-right of the body — reserve that corner so a long title or a wide

@@ -281,6 +281,61 @@ const title = dlg.querySelector('h2').getBoundingClientRect()
 // overlapY must be <= 0
 ```
 
+### Scrollbars: never set `scrollbar-width` alongside `::-webkit-scrollbar`
+
+In Chromium, declaring the standard `scrollbar-width` or `scrollbar-color`
+makes the engine **ignore every `::-webkit-scrollbar` rule**. Setting both on
+`*` silently discarded all custom scrollbar styling and fell back to the native
+bar, coloured `--line` — the same value as the panel border, so it read as a
+stray line rather than a scrollbar.
+
+Style the pseudo-elements; use the standard properties only as a fallback:
+
+```css
+*::-webkit-scrollbar { width: 10px; }
+*::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted) 30%, transparent); }
+
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: /* same colour */ transparent; }
+}
+```
+
+Verify by reading computed style — `scrollbarWidth: "auto"` means the
+pseudo-elements are live; anything else means they are dead code:
+
+```js
+getComputedStyle(el).scrollbarWidth   // "auto" ✓  | "thin" ✗ (webkit rules ignored)
+```
+
+### Put the scrollbar on an un-rounded inner element
+
+A scrollbar on an element with `border-radius` runs its track through both
+rounded corners. Give the frame `overflow: hidden` + the radius, and let an
+inner body own the scroll:
+
+```css
+.frame { display: flex; flex-direction: column; overflow: hidden; border-radius: 28px; }
+.header { flex: 0 0 auto; }              /* stays pinned */
+.body   { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.body::-webkit-scrollbar-track { margin-block: 12px; }  /* clear the corners */
+```
+
+`min-height: 0` is required — without it a flex child refuses to shrink and
+never scrolls.
+
+### Measuring a `motion` component: use `offsetWidth`, not `getBoundingClientRect`
+
+`getBoundingClientRect()` includes the current transform. An entrance spring
+(`scale: .96 → 1`) makes a settled 384px dialog measure 369px, and under a
+backgrounded pane rAF throttling can freeze it mid-flight, so the reading looks
+like a real layout bug. Read the layout box instead:
+
+```js
+el.offsetWidth                 // 384 — layout, transform ignored
+getComputedStyle(el).width     // "384px"
+// getBoundingClientRect().width  ← may be mid-animation; do not assert on it
+```
+
 ## Do not
 
 - Do not `npm install` a component library to get these components.
