@@ -63,6 +63,15 @@ const api: Bridge = {
   updateCheck: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateCheck),
   updateInstall: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateInstall),
   openReleases: () => ipcRenderer.invoke(BRIDGE_CHANNELS.openReleases),
+  copySecret: (input) => ipcRenderer.invoke('secrets:copy', input),
+  importScanPutty: () => ipcRenderer.invoke('import:scan-putty'),
+  importScanSshConfig: () => ipcRenderer.invoke('import:scan-sshconfig'),
+  importBulk: (input) => ipcRenderer.invoke('import:bulk', input),
+  sftpEdit: (input) => ipcRenderer.invoke('sftp:edit', input),
+  onEditSynced: (cb) => {
+    ipcRenderer.on('editor:synced', (_e, msg) => cb(msg))
+    return () => undefined
+  },
   onUpdateState: (cb) => {
     const handler = (_e: unknown, st: unknown) => cb(st as never)
     ipcRenderer.on(UPDATE_STATE_CHANNEL, handler)

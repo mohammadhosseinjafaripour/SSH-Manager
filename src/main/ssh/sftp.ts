@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { createReadStream, promises as fsp } from 'node:fs'
+import { createReadStream, createWriteStream, promises as fsp } from 'node:fs'
 import { basename, join, posix as pathPosix } from 'node:path'
 import { Client } from 'ssh2'
 import type { SFTPWrapper, FileEntryWithStats } from 'ssh2'
@@ -134,6 +134,70 @@ export function listDir(handle: SftpHandle, dir: string): Promise<RemoteEntry[]>
         })
       resolve(entries)
     })
+  })
+}
+
+/** Remote stat: null when the path does not exist. */
+export function statRemote(handle: SftpHandle, path: string): Promise<{ size: number } | null> {
+  return new Promise((resolve) => {
+    handle.sftp.stat(path, (err, stats) => {
+      if (err || !stats) resolve(null)
+      else resolve({ size: stats.size })
+    })
+  })
+}
+
+/** Streams a local file to the remote path starting at `offset` (resume). */
+export function uploadFromOffset(
+  handle: SftpHandle,
+  localPath: string,
+  remotePath: string,
+  offset: number,
+  onProgress?: (transferred: number, total: number) => void,
+  signal?: { cancelled: boolean }
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const read = createReadStream(localPath, { start: offset })
+    const write = handle.sftp.createWriteStream(remotePath, { flags: 'r+', start: offset })
+    write.on('close', () => resolve())
+    write.on('error', (e: Error) => reject(new Error('sftp-upload-failed:' + e.message)))
+    read.on('error', (e: Error) => reject(new Error('sftp-upload-failed:' + e.message)))
+    read.on('data', (chunk: Buffer | string) => {
+      if (signal?.cancelled) {
+        read.destroy()
+        reject(new Error('cancelled'))
+        return
+      }
+      onProgress?.(offset + Buffer.byteLength(chunk), 0)
+    })
+    read.pipe(write)
+  })
+}
+
+/** Streams the remote file into the local path starting at `offset` (resume). */
+export function downloadFromOffset(
+  handle: SftpHandle,
+  remotePath: string,
+  localPath: string,
+  offset: number,
+  onProgress?: (transferred: number, total: number) => void,
+  signal?: { cancelled: boolean }
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const read = handle.sftp.createReadStream(remotePath, { start: offset })
+    const write = createWriteStream(localPath, { flags: 'r+', start: offset })
+    write.on('close', () => resolve())
+    write.on('error', (e: Error) => reject(new Error('sftp-download-failed:' + e.message)))
+    read.on('error', (e: Error) => reject(new Error('sftp-download-failed:' + e.message)))
+    read.on('data', (chunk: Buffer | string) => {
+      if (signal?.cancelled) {
+        read.destroy()
+        reject(new Error('cancelled'))
+        return
+      }
+      onProgress?.(offset + Buffer.byteLength(chunk), 0)
+    })
+    read.pipe(write)
   })
 }
 
@@ -326,7 +390,16 @@ export async function uploadPaths(
     } else if (stat.isFile()) {
       let targetName = basename(localPath)
       // Conflict policy applies per file so a mixed drop behaves predictably.
-      if (conflictPolicy !== 'overwrite') {
+      const remote = pathPosix.join(remoteDir, targetName)
+      if (conflictPolicy === 'resume') {
+        // Continue a partial remote file; skip files already fully uploaded.
+        const remoteStat = await statRemote(handle, remote)
+        if (remoteStat) {
+          if (remoteStat.size >= stat.size) continue
+          await uploadFromOffset(handle, localPath, remote, remoteStat.size, (t) => onProgress?.({ currentFile: targetName, transferred: t, total: stat.size, done: false }), signal)
+          continue
+        }
+      } else if (conflictPolicy !== 'overwrite') {
         const [clash] = await existingNames(handle, remoteDir, [targetName])
         if (clash) {
           if (conflictPolicy === 'skip') continue

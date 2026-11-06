@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { Client } from 'ssh2'
+import { Client, type ConnectConfig } from 'ssh2'
 import type { ClientChannel } from 'ssh2'
 import { MessagePortMain } from 'electron'
 import type { MainPortMessage, RendererPortMessage, ServerEntry, SessionStatus } from '@shared/types'
 import type { VaultStore } from '../vault/store'
 import { checkPin, fingerprintOf } from '../hostkeys/verifier'
 import { authConfig } from './auth'
+import { openJumpSocket } from './connection'
 import { ElevateDetector, buildElevateLine, makeNonce } from './elevate'
 
 const READY_TIMEOUT_MS = 20_000
@@ -19,7 +20,6 @@ const KEEPALIVE_MAX_MISSED = 20
 const KI_ANSWER_TIMEOUT_MS = 120_000
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000]
 
-type HostKeyDecision = (accept: boolean) => void
 
 export interface SshSessionOptions {
   server: ServerEntry
@@ -40,12 +40,13 @@ export class SshSession {
   private port: MessagePortMain | null = null
   private detector: ElevateDetector | null = null
   private sudoSecret: string | null = null
-  private pendingHostKey: HostKeyDecision | null = null
+  private resolveHostKey: ((accept: boolean) => void) | null = null
   private kiFinish: ((answers: string[]) => void) | null = null
   private kiTimer: ReturnType<typeof setTimeout> | null = null
   private kiAutoTried = false
   private ended = false
   private status: SessionStatus = 'connecting'
+  private jumpClose: (() => void) | null = null
   private reconnecting = false
   private reconnectAttempt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -82,7 +83,7 @@ export class SshSession {
   }
 
   /** (Re)establish the SSH connection. Safe to call for the first attempt or a retry. */
-  private connect(): void {
+  private async connect(): Promise<void> {
     const { host, port, username } = this.opts.server
     this.clearReconnectTimer()
     const conn = (this.conn = new Client())
@@ -105,11 +106,29 @@ export class SshSession {
       return
     }
 
-    conn.connect({
+    // Resolve the jump chain first: hops connect with their own pinned
+    // credentials, then forwardOut hands us a raw socket to the target.
+    let jumpSock: NodeJS.ReadWriteStream | null = null
+    if (this.opts.server.jumpHostId) {
+      try {
+        const jump = await openJumpSocket(this.opts.server, this.opts.store)
+        jumpSock = jump.sock
+        this.jumpClose = jump.close
+      } catch (err) {
+        this.fail(
+          'error',
+          err instanceof Error ? err.message : 'Jump host connection failed'
+        )
+        return
+      }
+    }
+
+    const config = {
       host,
       port,
       username,
       ...auth,
+      ...(jumpSock ? { sock: jumpSock } : {}),
       tryKeyboard: true,
       readyTimeout: READY_TIMEOUT_MS,
       ...(keepAlive
@@ -118,10 +137,15 @@ export class SshSession {
             keepaliveCountMax: KEEPALIVE_MAX_MISSED
           }
         : {}),
-      hostVerifier: (key: Buffer, cb?: (ok: boolean) => void) => {
-        this.verifyHostKey(key, cb ?? (() => {}))
-      }
-    })
+      // ssh2 >=1.11 supports a Promise verifier (typed APIs lag behind); the
+      // cast keeps the async TOFU flow while satisfying the callback typings.
+      // ssh2 >=1.11 accepts a Promise-returning verifier at runtime; the
+      // published typings only cover the callback forms, hence the cast.
+      // ssh2 >=1.11 accepts a Promise-returning verifier at runtime; the
+      // published typings only cover the callback forms, hence the cast.
+      hostVerifier: (key: Buffer) => this.verifyHostKey(key)
+    }
+    conn.connect(config as ConnectConfig)
   }
 
   /** Reads a boolean vault setting, defaulting to on if the vault is unavailable. */
@@ -139,8 +163,16 @@ export class SshSession {
     this.ended = true
     this.clearReconnectTimer()
     this.clearKiTimer()
+    if (this.jumpClose) {
+      try {
+        this.jumpClose()
+      } catch {
+        /* already gone */
+      }
+      this.jumpClose = null
+    }
     this.kiFinish = null
-    this.pendingHostKey = null
+    this.resolveHostKey = null
     this.sudoSecret = null
     this.detector?.finish()
     this.detector = null
@@ -159,7 +191,7 @@ export class SshSession {
 
   // ---- handshake -----------------------------------------------------------
 
-  private verifyHostKey(key: Buffer, cb: (ok: boolean) => void): void {
+  private async verifyHostKey(key: Buffer): Promise<boolean> {
     const { host, port } = this.opts.server
     const fingerprint = fingerprintOf(key)
     let check: ReturnType<typeof checkPin>
@@ -168,14 +200,10 @@ export class SshSession {
     } catch {
       // Vault locked mid-handshake — refuse rather than guess.
       this.fail('error', 'The vault is locked; reconnect after unlocking')
-      cb(false)
-      return
+      return false
     }
 
-    if (check.verdict === 'trusted') {
-      cb(true)
-      return
-    }
+    if (check.verdict === 'trusted') return true
     if (check.verdict === 'changed') {
       this.post({
         type: 'hostkey',
@@ -184,28 +212,23 @@ export class SshSession {
         pinnedFingerprint: check.pinnedFingerprint
       })
       this.fail('error', 'Host key changed — connection refused (verify out-of-band before replacing the pin)')
-      cb(false)
-      return
+      return false
     }
 
     // Unknown key: ask the user (TOFU). Nothing is sent either way until decided.
     this.setStatus('hostkey-unknown')
     this.post({ type: 'hostkey', kind: 'unknown', fingerprint })
-    this.pendingHostKey = (accept) => {
-      this.pendingHostKey = null
-      if (accept) {
-        void this.opts.store
-          .pinHostKey(host, port, fingerprint)
-          .catch(() => undefined)
-          .then(() => {
-            this.setStatus('connecting')
-            cb(true)
-          })
-      } else {
-        this.fail('error', 'Host key not trusted — connection refused')
-        cb(false)
-      }
+    const accepted = await new Promise<boolean>((resolve) => {
+      this.resolveHostKey = resolve
+    })
+    this.resolveHostKey = null
+    if (accepted) {
+      await this.opts.store.pinHostKey(host, port, fingerprint).catch(() => undefined)
+      this.setStatus('connecting')
+      return true
     }
+    this.fail('error', 'Host key not trusted — connection refused')
+    return false
   }
 
   private onKeyboardInteractive(
@@ -306,6 +329,14 @@ export class SshSession {
       }
       this.conn = null
       this.stream = null
+      if (this.jumpClose) {
+        try {
+          this.jumpClose()
+        } catch {
+          /* already gone */
+        }
+        this.jumpClose = null
+      }
       this.detector?.finish()
       this.detector = null
       this.kiAutoTried = false
@@ -402,7 +433,7 @@ export class SshSession {
         this.opts.store.touchActivity()
         return
       case 'hostkey-decision':
-        if (this.pendingHostKey) this.pendingHostKey(msg.accept)
+        this.resolveHostKey?.(msg.accept)
         return
       case 'ki-answer':
         this.clearKiTimer()

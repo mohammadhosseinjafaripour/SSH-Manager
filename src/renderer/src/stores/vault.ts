@@ -25,7 +25,8 @@ export const useVault = create<VaultState>((set) => ({
     keepAlive: true,
     autoReconnect: true,
     autocomplete: true,
-    autoUpdate: true
+    autoUpdate: true,
+    terminalFontSize: 13
   },
   servers: [],
 

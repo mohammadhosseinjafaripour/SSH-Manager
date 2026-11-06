@@ -33,7 +33,7 @@ const defaultState: MockState = {
   created: false,
   masterPassword: '',
   servers: seedServers(),
-  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true, autoUpdate: true },
+  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true, autoUpdate: true, terminalFontSize: 13 },
   pinned: {}
 }
 
@@ -41,6 +41,7 @@ function seedServers(): ServerEntry[] {
   const base = {
     authMethod: 'password' as const,
     keyAuth: null,
+    jumpHostId: null,
     notes: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -371,6 +372,7 @@ export function createMockBridge(): Bridge {
             password: cells[4] ?? '',
             authMethod: 'password' as const,
             keyAuth: null,
+            jumpHostId: null,
             tags: (cells[5] ?? '').split(';').filter(Boolean),
             notes: cells[6] ?? '',
             elevate: { enabled: (cells[7] ?? 'no') === 'yes', preset: (cells[8] as never) ?? 'sudo -s', customCommand: '', passwordMode: 'same' as const, customPassword: '' },
@@ -574,6 +576,16 @@ export function createMockBridge(): Bridge {
     updateInstall: async () => undefined,
     openReleases: async () => undefined,
     onUpdateState: () => () => undefined,
+    copySecret: async ({ serverId }) => {
+      const s = state.servers.find((x) => x.id === serverId)
+      void s
+      return undefined
+    },
+    importScanPutty: async () => ({ sessions: [] }),
+    importScanSshConfig: async () => ({ path: '~/.ssh/config', entries: [] }),
+    importBulk: async () => ({ servers: [], summary: { added: 0, skippedDuplicates: 0, replaced: false } }),
+    sftpEdit: async ({ remotePath }) => ({ localPath: remotePath }),
+    onEditSynced: () => () => undefined,
     pickKeyFile: async () =>
       new Promise((resolve) => {
         const input = document.createElement('input')
@@ -622,6 +634,10 @@ function inputToEntry(input: ServerUpsertInput, existing?: ServerEntry, now?: st
     username: input.username,
     password: input.password ?? existing?.password ?? '',
     authMethod: input.authMethod ?? existing?.authMethod ?? 'password',
+    jumpHostId:
+      input.jumpHostId !== undefined
+        ? input.jumpHostId
+        : existing?.jumpHostId ?? null,
     keyAuth:
       (input.authMethod ?? existing?.authMethod) === 'key'
         ? {

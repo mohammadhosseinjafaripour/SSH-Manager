@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { basename, join } from 'node:path'
 import { BRIDGE_CHANNELS } from '@shared/types'
 import type {
   ServerEntry,
@@ -24,7 +25,14 @@ import {
   serversToCsv
 } from './vault/transfer'
 import { ConnectionManager, healthCheckAll, testConnection } from './ssh/manager'
-import { looksLikePrivateKey } from './ssh/auth'
+import { looksLikePrivateKey, hasCredentials } from './ssh/auth'
+import { copySecretWithAutoClear } from './security'
+import { openRemoteInEditor } from './ssh/editor'
+import { parsePuttyRegOutput } from '@shared/putty'
+import { parseSshConfig } from '@shared/sshconfig'
+import { resolveProxyJump } from '@shared/jump'
+import { execFileSync } from 'node:child_process'
+import { homedir } from 'node:os'
 import { suggest } from '@shared/completion'
 import {
   chmodRemote,
@@ -58,6 +66,7 @@ function toView(entry: ServerEntry): ServerView {
     port: entry.port,
     username: entry.username,
     authMethod: entry.authMethod ?? 'password',
+    jumpHostId: entry.jumpHostId ?? null,
     hasKey: !!entry.keyAuth?.privateKey,
     hasKeyPassphrase: !!entry.keyAuth?.passphrase,
     tags: entry.tags,
@@ -299,6 +308,105 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     }
   )
 
+
+  // ---- copy password (auto-clearing clipboard) ----
+  handle('copySecret' as keyof typeof BRIDGE_CHANNELS, (input: { serverId: string }) => {
+    const server = store.getServer(input.serverId)
+    if (!server.password) throw new Error('invalid-input:no password stored — use a key or set one')
+    void copySecretWithAutoClear(server.password)
+    return { clearedAfter: 30 }
+  })
+
+  // ---- import scans ----
+  handle('importScanPutty', () => {
+    if (process.platform !== 'win32') return { sessions: [] }
+    try {
+      const out = execFileSync(
+        'reg',
+        ['query', 'HKCU\\Software\\SimonTatham\\PuTTY\\Sessions', '/s'],
+        { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, timeout: 10_000 }
+      )
+      return { sessions: parsePuttyRegOutput(out) }
+    } catch {
+      return { sessions: [] } // no PuTTY installed or no sessions
+    }
+  })
+
+  handle('importScanSshConfig', () => {
+    const configPath = join(homedir(), '.ssh', 'config')
+    try {
+      const text = readFileSync(configPath, 'utf8')
+      const entries = parseSshConfig(text)
+      return {
+        path: configPath,
+        entries: entries.map((e) => {
+          let hasKey = false
+          if (e.identityFile) {
+            try {
+              hasKey = looksLikePrivateKey(readFileSync(e.identityFile, 'utf8'))
+            } catch {
+              hasKey = false
+            }
+          }
+          return { ...e, hasKey, identityPath: e.identityFile }
+        })
+      }
+    } catch {
+      return { path: configPath, entries: [] }
+    }
+  })
+
+  handle(
+    'importBulk',
+    async (input: { candidates: Array<Record<string, unknown> & { name: string; host: string; port: number; username: string }> }) => {
+      const entries: ServerEntry[] = []
+      const aliasToId = new Map<string, string>()
+      for (const c of input.candidates) {
+        const id = randomUUID()
+        if ('alias' in c && typeof c.alias === 'string') aliasToId.set(c.alias.toLowerCase(), id)
+        if ('host' in c) aliasToId.set(String(c.host).toLowerCase(), id)
+        const authMethod = c.authMethod === 'key' ? ('key' as const) : ('password' as const)
+        entries.push({
+          id,
+          name: String(c.name),
+          host: String(c.host),
+          port: Number(c.port) || 22,
+          username: String(c.username),
+          password: typeof c.password === 'string' ? c.password : '',
+          authMethod,
+          keyAuth:
+            authMethod === 'key' && typeof c.privateKey === 'string' && c.privateKey
+              ? { privateKey: c.privateKey, passphrase: '' }
+              : null,
+          jumpHostId: null,
+          tags: Array.isArray(c.tags) ? (c.tags as string[]).map(String) : [],
+          notes: typeof c.notes === 'string' ? c.notes : '',
+          elevate: { enabled: false, preset: 'sudo -s', customCommand: '', passwordMode: 'same', customPassword: '' },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastConnectedAt: null
+        })
+      }
+      // Resolve proxyJump aliases to ids (second pass so ids exist).
+      for (const e of entries) {
+        const raw = (e as unknown as { proxyJumpAlias?: string }).proxyJumpAlias
+        if (raw) {
+          const hopId = aliasToId.get(raw.toLowerCase()) ?? resolveProxyJump(raw, entries.map((x) => ({ alias: undefined, host: x.host, id: x.id })))
+          e.jumpHostId = hopId
+        }
+      }
+      const valid = entries.filter((e) => hasCredentials(e))
+      return applyImport(store, { servers: valid }, 'merge')
+    }
+  )
+
+  // ---- edit remote file ----
+  handle('sftpEdit', async (input: { connectionId: string | null; serverId: string; remotePath: string }) => {
+    const server = store.getServer(input.serverId)
+    void handle // panel may be closed; editor opens its own SFTP connection
+    return openRemoteInEditor({ server, remotePath: input.remotePath })
+  })
+
   handle('healthCheck', (input: { serverIds: string[] }) => {
     const servers = input.serverIds
       .map((id) => {
@@ -520,6 +628,7 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
             password: i.password ?? '',
             authMethod: 'password' as const,
             keyAuth: null,
+            jumpHostId: null,
             tags: i.tags,
             notes: i.notes,
             elevate: {

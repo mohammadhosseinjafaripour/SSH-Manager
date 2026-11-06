@@ -1,4 +1,6 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray } from 'electron'
+import { registerOsLock, clearClipboardOnQuit } from './security'
+import { createEditorService, type EditorService } from './ssh/editor'
 import { join } from 'node:path'
 import { VAULT_LOCKED_CHANNEL } from '@shared/types'
 import { registerIpc } from './ipc'
@@ -26,6 +28,7 @@ let manager: ConnectionManager | null = null
 let lockTimer: ReturnType<typeof setInterval> | null = null
 let updater: UpdateService | null = null
 let tray: Tray | null = null
+let editor: EditorService | null = null
 let forceQuit = false
 let trayNoticeShown = false
 
@@ -173,7 +176,17 @@ app.whenReady().then(() => {
   registerUpdateIpc(updater)
   updater.start()
 
+  editor = createEditorService(store, () => mainWindow)
+
   createTray()
+
+  // Lock on OS session lock / suspend: walking away always requires the
+  // master password again. Live sessions keep running by design.
+  registerOsLock(store, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vault:locked')
+    }
+  })
 
   startAutoLock()
 
@@ -196,6 +209,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   updater?.stop()
+  editor?.stopAll()
   manager?.closeAll()
   store?.lock()
+  clearClipboardOnQuit()
 })

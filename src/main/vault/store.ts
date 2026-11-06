@@ -64,7 +64,8 @@ function defaultPayload(): VaultPayload {
       keepAlive: true,
       autoReconnect: true,
       autocomplete: true,
-      autoUpdate: true
+      autoUpdate: true,
+      terminalFontSize: 13
     }
   }
 }
@@ -222,6 +223,18 @@ export class VaultStore {
                 : existing.elevate.customPassword
               : ''
         }
+        // Jump host: explicit null clears, undefined keeps, an id sets it
+        // (validated against the vault so it can't dangle silently).
+        if ('jumpHostId' in input) {
+          if (input.jumpHostId === null) existing.jumpHostId = null
+          else if (input.jumpHostId) {
+            const jump = p.servers.find((j) => j.id === input.jumpHostId)
+            if (!jump || jump.id === existing.id) {
+              throw new Error('invalid-input:jump host must be another saved server')
+            }
+            existing.jumpHostId = jump.id
+          }
+        }
         existing.updatedAt = now
         return existing
       }
@@ -240,6 +253,7 @@ export class VaultStore {
         username: input.username.trim(),
         password: input.password ?? '',
         authMethod,
+        jumpHostId: input.jumpHostId ?? null,
         keyAuth:
           authMethod === 'key' && input.privateKey
             ? { privateKey: input.privateKey, passphrase: input.keyPassphrase ?? '' }

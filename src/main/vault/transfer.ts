@@ -265,6 +265,7 @@ function cloneIncoming(servers: ReadonlyArray<ServerEntry>, takenIds: Set<string
         s.authMethod === 'key' && s.keyAuth?.privateKey
           ? { privateKey: s.keyAuth.privateKey, passphrase: s.keyAuth.passphrase ?? '' }
           : null,
+      jumpHostId: s.jumpHostId ?? null,
       elevate: {
         enabled: !!s.elevate?.enabled,
         preset: s.elevate?.preset ?? 'sudo -s',
@@ -290,6 +291,10 @@ export async function applyImport(
     if (mode === 'replace') {
       const servers = cloneIncoming(incoming.servers, new Set())
       const pins = incoming.pinnedHostKeys ? [...incoming.pinnedHostKeys] : []
+      const knownIds = new Set(servers.map((s) => s.id))
+      for (const s of servers) {
+        if (s.jumpHostId && !knownIds.has(s.jumpHostId)) s.jumpHostId = null
+      }
       payload.servers = servers
       payload.pinnedHostKeys = pins
       return { added: servers.length, skippedDuplicates: 0, replaced: true }
@@ -301,6 +306,12 @@ export async function applyImport(
     let added = 0
     let skippedDuplicates = 0
     const fresh = cloneIncoming(incoming.servers, takenIds)
+    // A jump pointing at a server that neither existed nor was imported would
+    // dangle — clear it so connections fail with a clear message, not a ghost.
+    const knownIds = new Set(payload.servers.map((s) => s.id))
+    for (const s of fresh) {
+      if (s.jumpHostId && !knownIds.has(s.jumpHostId)) s.jumpHostId = null
+    }
     for (const s of fresh) {
       if (existingKeys.has(naturalKey(s))) {
         skippedDuplicates++

@@ -39,6 +39,7 @@ function makeServer(over: Partial<ServerEntry> = {}): ServerEntry {
     password: over.password ?? 'secret-one',
     authMethod: over.authMethod ?? 'password',
     keyAuth: over.keyAuth ?? null,
+    jumpHostId: over.jumpHostId ?? null,
     tags: over.tags ?? ['prod'],
     notes: over.notes ?? '',
     elevate: over.elevate ?? {

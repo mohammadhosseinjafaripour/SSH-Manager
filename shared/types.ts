@@ -41,6 +41,8 @@ export interface ServerEntry {
   authMethod: AuthMethod
   /** Present when authMethod is 'key'. */
   keyAuth: KeyAuth | null
+  /** Optional bastion: tunnels through the server with this id (ProxyJump). */
+  jumpHostId: string | null
   tags: string[]
   notes: string
   elevate: ElevateConfig
@@ -61,6 +63,8 @@ export interface ServerView {
   hasKey: boolean
   /** True when the stored key is passphrase-protected. */
   hasKeyPassphrase: boolean
+  /** Bastion hop: tunnels through the server with this id. */
+  jumpHostId: string | null
   tags: string[]
   notes: string
   elevate: {
@@ -89,6 +93,8 @@ export interface ServerUpsertInput {
   privateKey?: string
   /** Omit/undefined on edit = keep the stored passphrase. */
   keyPassphrase?: string
+  /** Tunnel through the server with this id; null clears the jump. */
+  jumpHostId?: string | null
   tags: string[]
   notes: string
   elevate: {
@@ -126,6 +132,8 @@ export interface VaultSettings {
   autocomplete: boolean
   /** Check GitHub Releases for newer versions in the background. */
   autoUpdate: boolean
+  /** Terminal font size in px (8-24). */
+  terminalFontSize: number
   /** Reconnect automatically when a session drops unexpectedly. */
   autoReconnect: boolean
 }
@@ -217,7 +225,7 @@ export interface TransferProgress {
 }
 
 /** What to do when an upload targets a path that already exists. */
-export type ConflictPolicy = 'overwrite' | 'rename' | 'skip'
+export type ConflictPolicy = 'overwrite' | 'rename' | 'skip' | 'resume'
 
 export interface ConflictInfo {
   /** Remote paths that already exist and would be overwritten. */
@@ -420,6 +428,26 @@ export interface Bridge {
   openReleases(): Promise<void>
   onUpdateState(cb: (s: UpdateState) => void): () => void
 
+  copySecret(input: { serverId: string }): Promise<void>
+  importScanPutty(): Promise<{ sessions: Array<{ name: string; host: string; port: number; username: string }> }>
+  importScanSshConfig(): Promise<{
+    path: string
+    entries: Array<{
+      alias: string
+      host: string
+      user: string
+      port: number
+      hasKey: boolean
+      identityPath?: string
+      proxyJump?: string
+    }>
+  }>
+  importBulk(input: {
+    candidates: Array<Record<string, unknown> & { name: string; host: string; port: number; username: string }>
+  }): Promise<{ servers: ServerView[]; summary: ImportSummary }>
+  sftpEdit(input: { connectionId: string | null; serverId: string; remotePath: string }): Promise<{ localPath: string }>
+  onEditSynced(cb: (msg: string) => void): () => void
+
   /** Tests every stored server in parallel; resolves per-server health. */
   healthCheck(input: { serverIds: string[] }): Promise<HealthResult[]>
   /** Opens a file picker and returns a local private key's text. */
@@ -472,11 +500,18 @@ export const BRIDGE_CHANNELS = {
   openReleases: 'update:open-releases',
   complete: 'terminal:complete',
   pickKeyFile: 'app:pick-key-file',
-  resolveDroppedPaths: 'app:resolve-dropped-paths'
+  resolveDroppedPaths: 'app:resolve-dropped-paths',
+  copySecret: 'secrets:copy',
+  importScanPutty: 'import:scan-putty',
+  importScanSshConfig: 'import:scan-sshconfig',
+  importBulk: 'import:bulk',
+  sftpEdit: 'sftp:edit',
+  editorSynced: 'editor:synced'
 } as const satisfies Record<string, string>
 
 export const TRANSFER_PROGRESS_CHANNEL = 'transfer:progress'
 export const UPDATE_STATE_CHANNEL = 'update:state'
+export const EDIT_SYNCED_CHANNEL = 'editor:synced'
 
 export const SESSION_PORT_CHANNEL = 'session-port'
 export const VAULT_LOCKED_CHANNEL = 'vault:locked'
