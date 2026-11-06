@@ -13,6 +13,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
 import type { UpdateState } from '@shared/types'
+import { describeNetworkError } from '@shared/network'
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 /** Never check more often than this, even if the user spams the button. */
@@ -55,8 +56,10 @@ export class UpdateService {
     })
     autoUpdater.on('error', (err: Error) => {
       // A failed update check must never be disruptive — no dialog, just a
-      // quiet status the Settings panel can show.
-      this.set({ phase: 'error', error: err.message })
+      // quiet status the Settings panel can show. Chromium net errors are
+      // translated to plain language: users who are offline should not see
+      // "net::ERR_CONNECTION_TIMED_OUT" and think the app is broken.
+      this.set({ phase: 'error', error: describeNetworkError(err.message).text })
     })
   }
 
@@ -96,7 +99,7 @@ export class UpdateService {
     } catch (err) {
       return this.set({
         phase: 'error',
-        error: err instanceof Error ? err.message : 'Update check failed'
+        error: describeNetworkError(err instanceof Error ? err.message : 'Update check failed').text
       })
     }
     return this.state

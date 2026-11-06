@@ -12,7 +12,7 @@ import {
   X
 } from 'lucide-react'
 import type { ServerView } from '@shared/types'
-import { Button, IconButton, StatusDot, Tag } from '../../components/ui'
+import { Button, IconButton, Input, StatusDot, Tag } from '../../components/ui'
 import { relativeTime } from '../../lib/format'
 import { useSessions } from '../../stores/sessions'
 import { useUi, type HealthState } from '../../stores/ui'
@@ -83,23 +83,29 @@ export function ServersView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-line px-6 py-4">
-        <div className="relative w-full max-w-md">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-          <input
-            id="servers-search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search servers, hosts, tags…"
-            className="h-10 w-full rounded-lg border border-line bg-inset pl-9 pr-16 text-sm text-fg placeholder:text-faint transition-colors duration-150 focus:border-accent"
-          />
+          <div className="relative w-full max-w-md">
+            <Input
+              id="servers-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search servers, hosts, tags…"
+              leftIcon={<Search size={15} />}
+              classNames={{
+                // beUI's field defaults to a transparent pill; the server list
+                // uses a filled rounded rectangle with the app's own border.
+                field: 'rounded-lg border-line bg-inset',
+                // Room for the clear button / shortcut hint overlay.
+                input: 'pr-16'
+              }}
+            />
           {search ? (
-            <button
+            <IconButton
+              label="Clear search"
               onClick={() => setSearch('')}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-faint hover:text-fg"
+              className="absolute right-2 top-1/2 h-7 w-7 -translate-y-1/2 text-faint hover:text-fg"
             >
               <X size={14} />
-            </button>
+            </IconButton>
           ) : (
             <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-faint">
               Ctrl+Shift+F

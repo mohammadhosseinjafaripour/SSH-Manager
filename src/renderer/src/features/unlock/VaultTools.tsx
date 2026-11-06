@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, HardDriveDownload } from 'lucide-react'
 import type { VaultBackupInfo } from '@shared/types'
-import { Button, Field, PasswordInput } from '../../components/ui'
+import { Button, Field, PasswordInput, RadioGroup, RadioGroupItem } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 
 function formatSize(bytes: number): string {
@@ -64,30 +64,29 @@ export function VaultTools({ onBack }: { onBack: () => void }) {
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            {backups.map((b) => (
-              <label
-                key={b.file}
-                className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 text-[13px] transition-colors duration-150 ${
-                  selected === b.file
-                    ? 'border-accent bg-accent-soft text-fg'
-                    : 'border-line bg-inset text-muted hover:border-accent/50'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="backup"
-                    className="accent-[var(--accent)]"
-                    checked={selected === b.file}
-                    onChange={() => setSelected(b.file)}
-                  />
-                  {b.file}
-                </span>
-                <span className="text-faint">
-                  {new Date(b.modifiedAt).toLocaleString()} · {formatSize(b.sizeBytes)}
-                </span>
-              </label>
-            ))}
+            <RadioGroup
+              value={selected ?? ''}
+              onValueChange={setSelected}
+              aria-label="Backup to restore"
+            >
+              {backups.map((b) => (
+                <RadioGroupItem
+                  key={b.file}
+                  value={b.file}
+                  label={b.file}
+                  className={`w-full justify-between rounded-lg border px-3 py-2.5 text-[13px] transition-colors duration-150 ${
+                    selected === b.file
+                      ? 'border-accent bg-accent-soft text-fg'
+                      : 'border-line bg-inset text-muted hover:border-accent/50'
+                  }`}
+                  trailing={
+                    <span className="text-faint">
+                      {new Date(b.modifiedAt).toLocaleString()} · {formatSize(b.sizeBytes)}
+                    </span>
+                  }
+                />
+              ))}
+            </RadioGroup>
           </div>
 
           <Field

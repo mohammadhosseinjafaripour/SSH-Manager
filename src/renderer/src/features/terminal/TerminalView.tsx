@@ -17,7 +17,7 @@ import {
   X
 } from 'lucide-react'
 import { FilesPanel } from '../files/FilesPanel'
-import { Button } from '../../components/ui'
+import { Button, IconButton, Input } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 import { serverById, useVault } from '../../stores/vault'
 import { useInlineCompletion } from './useInlineCompletion'
@@ -88,8 +88,7 @@ function SearchBar({ search, onClose }: { search: SearchAddon | null; onClose: (
 
   return (
     <div className="banner-in absolute right-3 top-2 z-20 flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1.5 shadow-xl">
-      <Search size={13} className="shrink-0 text-faint" />
-      <input
+      <Input
         ref={inputRef}
         value={query}
         onChange={(e) => {
@@ -113,31 +112,35 @@ function SearchBar({ search, onClose }: { search: SearchAddon | null; onClose: (
         }}
         placeholder="Find in terminal…"
         aria-label="Find in terminal"
-        className="h-6 w-44 bg-transparent text-[12.5px] text-fg placeholder:text-faint focus:outline-none"
+        leftIcon={<Search size={13} />}
+        className="w-44"
+        classNames={{
+          field: 'h-6 border-transparent bg-transparent',
+          input: 'pl-7 text-[12.5px]',
+          leftIcon: 'left-2'
+        }}
       />
       <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-faint">
         {query ? `${hits.count === 0 ? 0 : hits.index + 1}/${hits.count}` : ''}
       </span>
-      <button
-        type="button"
+      <IconButton
+        label="Previous match"
         onClick={() => run('prev')}
         disabled={!query}
-        aria-label="Previous match"
-        className="rounded p-1 text-muted transition-colors hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+        className="h-6 w-6 text-muted hover:bg-panel-2 hover:text-fg"
       >
         <ChevronUp size={13} />
-      </button>
-      <button
-        type="button"
+      </IconButton>
+      <IconButton
+        label="Next match"
         onClick={() => run('next')}
         disabled={!query}
-        aria-label="Next match"
-        className="rounded p-1 text-muted transition-colors hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+        className="h-6 w-6 text-muted hover:bg-panel-2 hover:text-fg"
       >
         <ChevronDown size={13} />
-      </button>
-      <button
-        type="button"
+      </IconButton>
+      <Button
+        variant="ghost"
         onClick={() => {
           const next = !caseSensitive
           setCaseSensitive(next)
@@ -145,14 +148,14 @@ function SearchBar({ search, onClose }: { search: SearchAddon | null; onClose: (
         }}
         title="Match case"
         aria-pressed={caseSensitive}
-        className={`rounded px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
+        className={`h-auto min-h-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-normal hover:bg-transparent ${
           caseSensitive ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
         }`}
       >
         Aa
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="ghost"
         onClick={() => {
           const next = !wholeWord
           setWholeWord(next)
@@ -160,23 +163,22 @@ function SearchBar({ search, onClose }: { search: SearchAddon | null; onClose: (
         }}
         title="Whole word"
         aria-pressed={wholeWord}
-        className={`rounded px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
+        className={`h-auto min-h-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-normal hover:bg-transparent ${
           wholeWord ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
         }`}
       >
         ab
-      </button>
-      <button
-        type="button"
+      </Button>
+      <IconButton
+        label="Close search"
         onClick={() => {
           search?.clearDecorations()
           onClose()
         }}
-        aria-label="Close search"
-        className="rounded p-1 text-faint transition-colors hover:text-fg"
+        className="h-6 w-6 text-faint hover:bg-panel-2 hover:text-fg"
       >
         <X size={13} />
-      </button>
+      </IconButton>
     </div>
   )
 }
@@ -608,13 +610,14 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
       {tab.status === 'elevate-failed' && tab.detail && (
         <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-lg border border-warn/40 bg-warn-soft px-3 py-1.5 text-[12.5px] text-warn shadow-lg">
           <span>Auto-sudo: {tab.detail}</span>
-          <button
+          <Button
+            variant="outline"
             onClick={() => sessionPorts.get(tab.sessionId)?.send({ type: 'input', data: 'stty echo\r' })}
-            className="shrink-0 rounded border border-warn/50 px-2 py-0.5 text-[11.5px] font-medium transition-colors duration-150 hover:bg-warn/20"
+            className="h-auto min-h-0 shrink-0 rounded border-warn/50 px-2 py-0.5 text-[11.5px] font-medium text-warn hover:bg-warn/20"
             title="If typing is invisible, this restores terminal echo"
           >
             Restore echo
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -659,14 +662,17 @@ export function TerminalView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
-        <button
+        <Button
+          variant="ghost"
           onClick={() => select('servers')}
-          className={`flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors duration-150 ${
-            active === 'servers' ? 'bg-panel-2 text-fg' : 'text-muted hover:bg-panel-2/60 hover:text-fg'
+          className={`h-8 shrink-0 gap-2 rounded-lg px-3 text-[13px] ${
+            active === 'servers'
+              ? 'bg-panel-2 font-medium text-fg hover:bg-panel-2'
+              : 'font-medium text-muted hover:bg-panel-2/60 hover:text-fg'
           }`}
         >
           Servers
-        </button>
+        </Button>
         <div className="mx-1 h-5 w-px shrink-0 bg-line" />
 
         {/* Scrollable tab strip: many sessions stay reachable instead of
@@ -702,45 +708,43 @@ export function TerminalView() {
                     ROOT
                   </span>
                 ) : null}
-                <button
-                  type="button"
-                  aria-label={`Close ${t.name} tab`}
-                  className="rounded p-0.5 text-faint opacity-0 transition-opacity duration-150 hover:text-danger group-hover:opacity-100"
+                <IconButton
+                  label={`Close ${t.name} tab`}
+                  className="h-5 w-5 text-faint opacity-0 hover:bg-transparent hover:text-danger group-hover:opacity-100"
                   onClick={(e) => {
                     e.stopPropagation()
                     closeTab(t.sessionId)
                   }}
                 >
                   <X size={13} />
-                </button>
+                </IconButton>
               </div>
             )
           })}
         </div>
 
-        <button
-          type="button"
+        <IconButton
+          label="Find in terminal (Ctrl+Shift+F)"
           onClick={() => useSessions.getState().requestSearch(active)}
           disabled={!activeTab}
-          title="Find in terminal (Ctrl+Shift+F)"
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+          className="h-8 w-8 shrink-0 text-muted hover:bg-panel-2 hover:text-fg"
         >
           <Search size={14} />
-        </button>
+        </IconButton>
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={() => setFilesOpen((v) => !v)}
           disabled={!filesUsable}
           title={filesUsable ? 'Browse and transfer files (SFTP)' : 'Connect first to transfer files'}
           aria-pressed={filesOpen}
-          className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] transition-colors duration-150 disabled:opacity-40 ${
-            filesOpen ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-panel-2 hover:text-fg'
+          className={`h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-[12.5px] font-normal ${
+            filesOpen ? 'bg-accent-soft text-accent hover:bg-accent-soft' : 'text-muted hover:bg-panel-2 hover:text-fg'
           }`}
         >
           <FolderClosed size={14} />
           Files
-        </button>
+        </Button>
 
         {tabs.length > 1 && (
           <span className="shrink-0 pr-1 text-[11px] tabular-nums text-faint" title="Open sessions">

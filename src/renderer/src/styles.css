@@ -105,6 +105,30 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * Motion tokens for vendored uiarc components (dialog.module.css).
+ * Kept as plain custom properties rather than @theme entries: they are read
+ * by CSS Modules, not by Tailwind utilities.
+ */
+:root {
+  --duration-instant: 0.12s;
+  --duration-fast: 0.16s;
+  --duration-standard: 0.24s;
+  --duration-spring: 0.4s;
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0.01s;
+    --duration-fast: 0.01s;
+    --duration-standard: 0.01s;
+    --duration-spring: 0.01s;
+  }
+}
+
 /* Slim, theme-aware scrollbars */
 * {
   scrollbar-width: thin;

@@ -1,10 +1,21 @@
-import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type ReactNode
+} from 'react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { Eye, EyeOff, Loader2, X } from 'lucide-react'
-import { generatePassword } from '@shared/schemas'
 import { Switch as BeUISwitch } from './beui/Switch'
+import { Checkbox as BeUICheckbox } from './beui/checkbox'
 import { BeUIButton } from './beui/button'
-import { BeUIInput } from './beui/input'
+import { BeUIInput, type BeUIInputProps } from './beui/input'
+import {
+  Dialog as BeUIDialog,
+  DialogContent as BeUIDialogContent
+} from './beui/dialog'
 import {
   Select as SelectRoot,
   SelectContent,
@@ -14,7 +25,7 @@ import {
 } from './beui/select'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger'
   size?: 'sm' | 'md'
   loading?: boolean
 }
@@ -83,18 +94,29 @@ export function IconButton({
 /**
  * beUI input wrapper. `invalid` maps to beUI's error state (red border + shake
  * on appearance); messages stay at the call site via the Field component so
- * nothing shifts layout inside the pill.
+ * nothing shifts layout inside the pill. beUI's own extras (leftIcon,
+ * rightIcon, success) are passed through.
  */
 export const Input = forwardRef<
   HTMLInputElement,
-  InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }
->(function Input({ className = '', invalid, ...rest }, ref) {
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'value' | 'defaultValue'> &
+    Pick<BeUIInputProps, 'leftIcon' | 'rightIcon' | 'success' | 'classNames'> & {
+      invalid?: boolean
+      /** beUI inputs are string-controlled; number fields pass a number here. */
+      value?: string | number
+      defaultValue?: string | number
+    }
+>(function Input({ className = '', invalid, value, defaultValue, ...rest }, ref) {
   return (
     <BeUIInput
       ref={ref}
       error={invalid || undefined}
       className={className}
-      {...(rest as Partial<import('./beui/input').BeUIInputProps>)}
+      // beUI types these as string; native inputs allow numbers (e.g. the
+      // idle-lock minutes field), so coerce at the boundary.
+      value={value === undefined ? undefined : String(value)}
+      defaultValue={defaultValue === undefined ? undefined : String(defaultValue)}
+      {...rest}
     />
   )
 })
@@ -104,14 +126,12 @@ export function PasswordInput({
   onChange,
   placeholder,
   invalid,
-  withGenerator = false,
   autoComplete = 'new-password'
 }: {
   value: string
   onChange: (value: string) => void
   placeholder?: string
   invalid?: boolean
-  withGenerator?: boolean
   autoComplete?: string
 }) {
   const [reveal, setReveal] = useState(false)
@@ -124,20 +144,12 @@ export function PasswordInput({
         placeholder={placeholder}
         invalid={invalid}
         autoComplete={autoComplete}
-        className={withGenerator ? 'pr-24' : 'pr-10'}
+        // Padding must land on the inner <input>, not the wrapper: beUI's
+        // `className` styles the field container, so `pr-10` there narrows the
+        // whole field instead of reserving room for the reveal button.
+        classNames={{ input: 'pr-10' }}
       />
       <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
-        {withGenerator && (
-          <button
-            type="button"
-            onClick={() => onChange(generatePassword())}
-            title="Generate a strong password"
-            aria-label="Generate a strong password"
-            className="flex h-7 items-center rounded-md px-2 text-[12px] font-medium text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-accent"
-          >
-            Generate
-          </button>
-        )}
         <IconButton
           label={reveal ? 'Hide password' : 'Show password'}
           className="h-7 w-7"
@@ -178,6 +190,16 @@ export function Field({
   )
 }
 
+/**
+ * Vendored uiarc dialog (see components/beui/dialog.tsx).
+ *
+ * Call sites keep the app's original props: `open`/`onOpenChange`, an optional
+ * `title`/`description` pair, and a Tailwind `width` class. Width is translated
+ * into the CSS-module's `--dialog-width` custom property.
+ *
+ * With `title` omitted, dialogs render their own <Dialog.Title> markup; those
+ * get the floating close button instead of the built-in header.
+ */
 export function Dialog({
   open,
   onOpenChange,
@@ -195,43 +217,27 @@ export function Dialog({
   width?: string
 }) {
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="overlay-in fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
-        <DialogPrimitive.Content
-          className={`content-in fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] ${width} max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-line bg-panel p-6 shadow-2xl`}
-        >
-          {title ? (
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
-                {description && (
-                  <DialogPrimitive.Description className="mt-1 text-[13px] leading-relaxed text-muted">
-                    {description}
-                  </DialogPrimitive.Description>
-                )}
-              </div>
-              <DialogPrimitive.Close asChild>
-                <IconButton label="Close dialog">
-                  <X size={16} />
-                </IconButton>
-              </DialogPrimitive.Close>
-            </div>
-          ) : (
-            <DialogPrimitive.Close asChild>
-              <IconButton label="Close dialog" className="absolute right-4 top-4">
-                <X size={16} />
-              </IconButton>
-            </DialogPrimitive.Close>
-          )}
-          {children}
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <BeUIDialog open={open} onOpenChange={onOpenChange}>
+      <BeUIDialogContent
+        title={title}
+        description={description}
+        style={{ '--dialog-width': `${WIDTH_PX[width] ?? 440}px` } as CSSProperties}
+      >
+        {children}
+      </BeUIDialogContent>
+    </BeUIDialog>
   )
 }
 
-// Compound parts for dialogs that render their own rich headers.
+/** Call sites pass a Tailwind max-width class; the module needs real pixels. */
+const WIDTH_PX: Record<string, number> = {
+  'max-w-sm': 384,
+  'max-w-md': 448,
+  'max-w-lg': 512,
+  'max-w-xl': 576
+}
+
+/** Compound parts for dialogs that render their own rich headers. */
 Dialog.Title = DialogPrimitive.Title
 Dialog.Description = DialogPrimitive.Description
 
@@ -312,3 +318,47 @@ export function Tag({ children }: { children: ReactNode }) {
     </span>
   )
 }
+
+/**
+ * Vendored beUI checkbox (see components/beui/checkbox.tsx). The label and
+ * description are rendered by beUI, so call sites that need a custom row
+ * layout pass neither and place the control themselves.
+ */
+export function Checkbox({
+  checked,
+  onCheckedChange,
+  disabled,
+  label,
+  description,
+  size,
+  labelClassName,
+  className,
+  'aria-label': ariaLabel
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled?: boolean
+  label?: string
+  description?: string
+  size?: 'default' | 'compact'
+  labelClassName?: string
+  className?: string
+  'aria-label'?: string
+}) {
+  return (
+    <BeUICheckbox
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+      disabled={disabled}
+      label={label}
+      description={description}
+      size={size}
+      labelClassName={labelClassName}
+      className={className}
+      aria-label={ariaLabel}
+    />
+  )
+}
+
+/** Vendored beUI radio group (see components/beui/radio.tsx). */
+export { RadioGroup, RadioGroupItem } from './beui/radio'

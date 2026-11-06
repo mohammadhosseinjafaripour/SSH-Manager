@@ -5,7 +5,11 @@ dist/
 *.log
 .DS_Store
 .vite/
-.zcode/
+.zcode/*
+# Keep the reusable UI-migration procedure versioned; the rest of .zcode/ is
+# local session state and must stay ignored. The parent must be `.zcode/*`
+# (not `.zcode/`) for git to re-include anything inside it.
+!.zcode/skills/
 *.tsbuildinfo
 package-output.txt
 release/

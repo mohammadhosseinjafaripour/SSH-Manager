@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Check } from 'lucide-react'
 import type { RemoteEntry } from '@shared/types'
-import { Button, Dialog, Field, Input } from '../../components/ui'
+import { Button, Checkbox, Dialog, Field, Input } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 import { octalDigits, octalToRwx } from './mode-utils'
 
@@ -171,18 +171,14 @@ export function ChmodDialog({
                 const bit = 4 >> i
                 const on = !!(mode & (bit << shift))
                 cells.push(
-                  <label
+                  <Checkbox
                     key={`${label}-${ch}`}
-                    className="flex cursor-pointer items-center justify-center"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => toggle(shift, bit)}
-                      aria-label={`${label} ${ch}`}
-                      className="h-3.5 w-3.5 accent-[var(--accent)]"
-                    />
-                  </label>
+                    checked={on}
+                    onCheckedChange={() => toggle(shift, bit)}
+                    size="compact"
+                    aria-label={`${label} ${ch}`}
+                    labelClassName="justify-center"
+                  />
                 )
               })
               return cells
@@ -196,14 +192,14 @@ export function ChmodDialog({
             ['755', 0o755],
             ['700', 0o700]
           ].map(([label, m]) => (
-            <button
+            <Button
               key={label as string}
-              type="button"
+              variant="outline"
               onClick={() => setMode(m as number)}
-              className="rounded-md border border-line bg-panel px-2 py-1 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-accent/60 hover:text-accent"
+              className="h-auto min-h-0 rounded-md px-2 py-1 font-mono text-[11px] font-normal text-muted hover:border-accent/60 hover:text-accent"
             >
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         {error && (

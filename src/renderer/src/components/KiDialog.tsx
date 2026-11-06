@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MessageSquareLock } from 'lucide-react'
-import { Button, Dialog } from './ui'
+import { Button, Dialog, Input } from './ui'
 import { sessionPorts } from '../stores/sessions'
 import { useUi } from '../stores/ui'
 
@@ -33,7 +33,7 @@ export function KiDialog() {
           {ki.prompts.map((p, i) => (
             <div key={i} className="flex flex-col gap-1.5">
               <label className="text-[13px] font-medium text-fg">{p.prompt}</label>
-              <input
+              <Input
                 type={p.echo ? 'text' : 'password'}
                 value={answers[i] ?? ''}
                 onChange={(e) =>
@@ -43,7 +43,6 @@ export function KiDialog() {
                     return next
                   })
                 }
-                className="h-10 w-full rounded-lg border border-line bg-inset px-3 text-sm text-fg focus:border-accent"
                 autoFocus={i === 0}
                 autoComplete="off"
               />

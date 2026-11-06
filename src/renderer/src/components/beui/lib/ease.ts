@@ -26,3 +26,11 @@ export const SPRING_SWAP = {
   damping: 30,
   mass: 0.55,
 } as const;
+
+/** Shared-layout glides — pills, indicators and panels morphing between positions. */
+export const SPRING_LAYOUT = {
+  type: "spring",
+  stiffness: 360,
+  damping: 32,
+  mass: 0.6,
+} as const;

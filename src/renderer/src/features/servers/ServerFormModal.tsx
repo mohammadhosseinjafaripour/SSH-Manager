@@ -214,8 +214,8 @@ export function ServerFormModal() {
           <div className="flex flex-col gap-3 rounded-xl border border-line bg-inset p-4">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-medium text-fg">Private key</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={async () => {
                   const picked = await window.sshvault.pickKeyFile()
                   if (picked.ok && picked.contents) {
@@ -223,10 +223,10 @@ export function ServerFormModal() {
                     form.setError('privateKey', { message: '' })
                   }
                 }}
-                className="text-[12px] font-medium text-accent transition-colors duration-150 hover:underline"
+                className="h-auto min-h-0 p-0 text-[12px] font-medium text-accent hover:bg-transparent hover:underline"
               >
                 Load from file…
-              </button>
+              </Button>
             </div>
             <textarea
               value={form.watch('privateKey') ?? ''}
@@ -238,7 +238,7 @@ export function ServerFormModal() {
               }
               spellCheck={false}
               rows={5}
-              className="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 font-mono text-[11.5px] text-fg placeholder:text-faint focus:border-accent"
+              className="w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 font-mono text-[11.5px] text-fg placeholder:text-faint transition-colors duration-150 focus:border-accent focus:outline-none"
             />
             {form.formState.errors.privateKey?.message && (
               <p className="text-[12px] text-danger">{form.formState.errors.privateKey.message}</p>
@@ -320,28 +320,28 @@ export function ServerFormModal() {
               )}
               <Field label="Sudo password">
                 <div className="flex gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
                     onClick={() => form.setValue('elevate.passwordMode', 'same')}
-                    className={`h-9 flex-1 rounded-lg border px-3 text-[13px] transition-colors duration-150 ${
+                    className={`h-9 flex-1 rounded-lg px-3 text-[13px] font-normal ${
                       passwordMode === 'same'
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-accent bg-accent-soft text-accent hover:bg-accent-soft'
                         : 'border-line bg-panel text-muted hover:text-fg'
                     }`}
                   >
                     Same as login
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => form.setValue('elevate.passwordMode', 'custom')}
-                    className={`h-9 flex-1 rounded-lg border px-3 text-[13px] transition-colors duration-150 ${
+                    className={`h-9 flex-1 rounded-lg px-3 text-[13px] font-normal ${
                       passwordMode === 'custom'
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-accent bg-accent-soft text-accent hover:bg-accent-soft'
                         : 'border-line bg-panel text-muted hover:text-fg'
                     }`}
                   >
                     Separate password
-                  </button>
+                  </Button>
                 </div>
               </Field>
               {passwordMode === 'custom' && (
@@ -353,7 +353,6 @@ export function ServerFormModal() {
                   <PasswordInput
                     value={form.watch('elevate.customPassword') ?? ''}
                     onChange={(v) => form.setValue('elevate.customPassword', v)}
-                    withGenerator
                   />
                 </Field>
               )}
@@ -414,7 +413,6 @@ function PasswordInputWithForm({ form }: { form: UseFormReturn<ServerFormValues>
     <PasswordInput
       value={value}
       onChange={(v) => form.setValue('password', v)}
-      withGenerator
       invalid={!!error}
       placeholder={form.getValues('name') && !value ? '••••••••••  (unchanged)' : 'Server login password'}
     />

@@ -33,16 +33,16 @@ function ToggleRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={() => onToggle(!checked)}
-        className="cursor-pointer text-left"
+        className="h-auto min-h-0 flex-col items-start justify-start gap-0 p-0 text-left font-normal hover:bg-transparent"
       >
         <span className="block text-[12.5px] text-fg">{label}</span>
         <span className="mt-0.5 block max-w-[300px] text-[11.5px] leading-relaxed text-muted">
           {SETTING_DESCRIPTIONS[label] ?? null}
         </span>
-      </button>
+      </Button>
       <Switch
         label={label}
         checked={checked}
@@ -118,19 +118,19 @@ export function SettingsDialog() {
               { value: 'light' as Theme, icon: <Sun size={14} />, label: 'Light' },
               { value: 'system' as Theme, icon: <Settings2 size={14} />, label: 'System' }
             ].map((opt) => (
-              <button
+              <Button
                 key={opt.value}
-                type="button"
+                variant="outline"
                 onClick={() => void saveTheme(opt.value)}
-                className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-[13px] transition-colors duration-150 ${
+                className={`h-9 flex-1 justify-center gap-1.5 rounded-lg text-[13px] font-normal ${
                   settings.theme === opt.value
-                    ? 'border-accent bg-accent-soft text-accent'
+                    ? 'border-accent bg-accent-soft text-accent hover:bg-accent-soft'
                     : 'border-line bg-panel text-muted hover:text-fg'
                 }`}
               >
                 {opt.icon}
                 {opt.label}
-              </button>
+              </Button>
             ))}
           </div>
         </Field>
@@ -231,17 +231,17 @@ export function SettingsDialog() {
               <ArrowUpFromLine size={14} />
               Import file…
             </Button>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => {
                 setSettingsOpen(false)
                 useUi.getState().openTransfer('csv-export')
               }}
-              className="col-span-2 flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12.5px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-warn"
+              className="col-span-2 h-8 justify-center gap-1.5 rounded-lg px-3 text-[12.5px] font-normal text-muted hover:bg-panel-2 hover:text-warn"
             >
               <FileSpreadsheet size={13} />
               Export as CSV (plaintext passwords)
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -278,7 +278,9 @@ function describeUpdate(state: UpdateState | null): string {
     case 'ready':
       return `Version ${state.version ?? ''} is downloaded and ready. Restart when convenient — open SSH sessions will close.`
     case 'error':
-      return `Could not check for updates: ${state.error ?? 'unknown error'}`
+      // The main process already turns Chromium net errors into sentences
+      // ("No internet connection…"). Older/unknown messages get the prefix.
+      return state.error ? state.error : 'Could not check for updates.'
     default:
       return 'Not checked yet.'
   }

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { masterPasswordIssues } from '@shared/schemas'
 import type { ImportPickResult, ImportSummary } from '@shared/types'
-import { Button, Dialog, Field, PasswordInput, Spinner, Switch } from './ui'
+import { Button, Checkbox, Dialog, Field, PasswordInput, Spinner, Switch } from './ui'
 import { friendlyError } from '../lib/errors'
 import { useUi } from '../stores/ui'
 import { useVault } from '../stores/vault'
@@ -181,15 +181,12 @@ function CsvExportPanel() {
             This file contains every password in readable plaintext. Anyone who opens it sees
             everything. Delete it as soon as you're done with it.
           </p>
-          <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-fg">
-            <input
-              type="checkbox"
-              checked={ack}
-              onChange={(e) => setAck(e.target.checked)}
-              className="h-4 w-4 accent-[var(--warn)]"
-            />
-            I understand the risk — export plaintext anyway
-          </label>
+          <Checkbox
+            checked={ack}
+            onCheckedChange={setAck}
+            label="I understand the risk — export plaintext anyway"
+            className="text-[13px] text-fg"
+          />
           {error && (
             <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">
               {error}
@@ -292,10 +289,10 @@ function ImportPanel() {
         </div>
       ) : (
         <div className="mt-5 flex flex-col gap-4">
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={pick}
-            className="flex h-16 items-center justify-center gap-2 rounded-xl border border-dashed border-line text-[13px] text-muted transition-colors duration-150 hover:border-accent/60 hover:text-accent"
+            className="h-16 w-full justify-center gap-2 rounded-xl border-dashed text-[13px] font-normal text-muted hover:border-accent/60 hover:text-accent"
           >
             <FolderOpen size={16} />
             {picked?.ok && picked.fileName ? (
@@ -309,7 +306,7 @@ function ImportPanel() {
             ) : (
               'Choose a .sshvault or .csv file…'
             )}
-          </button>
+          </Button>
 
           {picked?.ok && picked.format === 'encrypted' && (
             <Field label="Export password" error={error ?? undefined}>
@@ -351,15 +348,14 @@ function ImportPanel() {
           )}
 
           {mode === 'replace' && picked?.ok && (
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5 text-[12.5px] text-danger">
-              <input
-                type="checkbox"
+            <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5">
+              <Checkbox
                 checked={replaceAck}
-                onChange={(e) => setReplaceAck(e.target.checked)}
-                className="h-4 w-4 accent-[var(--danger)]"
+                onCheckedChange={setReplaceAck}
+                label={`Yes, permanently delete my ${servers.length} current servers first`}
+                className="text-[12.5px] text-danger"
               />
-              Yes, permanently delete my {servers.length} current servers first
-            </label>
+            </div>
           )}
 
           <div className="flex justify-end gap-2">
@@ -391,14 +387,14 @@ function ModeButton({
   danger?: boolean
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       onClick={onClick}
-      className={`rounded-xl border px-4 py-3 text-left transition-colors duration-150 ${
+      className={`h-auto min-h-0 flex-col items-start justify-start gap-0 rounded-xl px-4 py-3 text-left font-normal ${
         active
           ? danger
-            ? 'border-danger bg-danger-soft'
-            : 'border-accent bg-accent-soft'
+            ? 'border-danger bg-danger-soft hover:bg-danger-soft'
+            : 'border-accent bg-accent-soft hover:bg-accent-soft'
           : 'border-line bg-inset hover:border-accent/50'
       }`}
     >
@@ -406,6 +402,6 @@ function ModeButton({
         {title}
       </span>
       <p className="mt-0.5 text-[12px] leading-relaxed text-muted">{description}</p>
-    </button>
+    </Button>
   )
 }

@@ -1,0 +1,214 @@
+/* Vendored from uiarc (https://uiarc.dev) — MIT license — registry/components/dialog/dialog.module.css
+ * Adapted: uiarc's design-system variables (--space-*, --radius-*, --surface-*,
+ * --text-*, --duration-*, --ease-*, --shadow-floating) do not exist in SSH
+ * Vault. They are mapped here onto the app palette from styles.css so the
+ * dialog follows the light/dark theme instead of uiarc's own hard-coded look. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 0.6);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+/* Centered with auto margins (like a native modal dialog) so transform stays free for the entrance spring.
+ * Width comes from --dialog-width, which the wrapper sets per call site
+ * (the app's dialogs range from max-w-sm to max-w-lg). */
+.content {
+  position: fixed;
+  z-index: 51;
+  inset: 0;
+  width: min(calc(100vw - 32px), var(--dialog-width, 440px));
+  height: fit-content;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+}
+/* Motion animates both layers. Keyframes only run when DialogContent sits under a bare Radix root. */
+.keyframes.overlay[data-state='open'] {
+  animation: overlay-in var(--duration-standard) var(--ease-enter) both;
+}
+.keyframes.overlay[data-state='closed'] {
+  animation: overlay-out var(--duration-fast) var(--ease-standard) both;
+}
+.keyframes.content[data-state='open'] {
+  animation:
+    content-fade-in var(--duration-fast) var(--ease-enter) both,
+    content-rise-in var(--duration-spring) var(--ease-spring) both;
+}
+.keyframes.content[data-state='closed'] {
+  animation: content-out var(--duration-fast) var(--ease-standard) both;
+}
+.content:focus {
+  outline: none;
+}
+/* While the layers leave, clicks pass through, so the trigger can reopen the dialog mid-exit. Radix sets pointer-events inline on the overlay. */
+.overlay[data-state='closed'],
+.content[data-state='closed'] {
+  pointer-events: none !important;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+}
+.title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+.description {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.title,
+.description {
+  position: relative;
+  overflow-wrap: anywhere;
+}
+.swap {
+  display: block;
+}
+/* Line height sits on the text itself, so a page-level heading reset cannot shrink the title and pull the close button off its line. */
+.title .swap {
+  line-height: 1.4;
+}
+/* A compact icon button: quick press, spring release. The negative margin centres it on the title's first line. */
+.close {
+  flex: 0 0 auto;
+  margin-block: calc((16px * 1.4 - 32px) / 2);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--panel-2) 50%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-spring) var(--ease-spring);
+}
+@media (hover: hover) and (pointer: fine) {
+  .close:hover {
+    background: var(--panel-2);
+    color: var(--fg);
+  }
+}
+.close:active {
+  transform: scale(0.96);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-standard);
+}
+.body {
+  padding: 24px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+/* When the caller renders its own header, the floating close button sits over
+ * the top-right of the body — reserve that corner so a long title or a wide
+ * row cannot slide under it. */
+.bodyWithFloatingClose {
+  padding-top: 56px;
+}
+/* Callers that render their own header (Dialog.Title in children) still need
+ * a close affordance in the corner. */
+.closeFloating {
+  position: absolute;
+  top: 16px;
+  right: 16px;  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--panel-2) 50%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-spring) var(--ease-spring);
+}
+@media (hover: hover) and (pointer: fine) {
+  .closeFloating:hover {
+    background: var(--panel-2);
+    color: var(--fg);
+  }
+}
+.closeFloating:active {
+  transform: scale(0.96);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-standard);
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes content-rise-in {
+  from {
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes content-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes content-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .keyframes.overlay[data-state='open'],
+  .keyframes.content[data-state='open'] {
+    animation: overlay-in var(--duration-instant) var(--ease-standard) both;
+  }
+  .keyframes.overlay[data-state='closed'] {
+    animation: overlay-out var(--duration-instant) var(--ease-standard) both;
+  }
+  .keyframes.content[data-state='closed'] {
+    animation: content-fade-out var(--duration-instant) var(--ease-standard) both;
+  }
+  .close,
+  .close:active {
+    transition: none;
+  }
+  .close:active {
+    transform: none;
+  }
+}

@@ -94,13 +94,13 @@ function UnlockCard() {
           <KeyRound size={15} />
           Unlock vault
         </Button>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={() => setShowTools(true)}
-          className="mx-auto text-[12px] text-faint transition-colors duration-150 hover:text-muted"
+          className="mx-auto h-auto min-h-0 p-0 text-[12px] font-normal text-faint hover:bg-transparent hover:text-muted"
         >
           Vault tools — restore a backup
-        </button>
+        </Button>
       </form>
     </div>
   )

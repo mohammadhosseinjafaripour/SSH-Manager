@@ -17,7 +17,7 @@ import {
   Columns3
 } from 'lucide-react'
 import type { ConflictPolicy, RemoteEntry, TransferProgress } from '@shared/types'
-import { Button, IconButton, Select } from '../../components/ui'
+import { Button, Checkbox, IconButton, Input, Select } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 import { ChmodDialog, RenameDialog } from './RenameDialog'
 import { COLUMNS, ColumnResizer, useColumnState } from './columns'
@@ -404,7 +404,7 @@ export function FilesPanel({
 
       {/* path bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-2">
-        <input
+        <Input
           value={cwd}
           onChange={(e) => setCwd(e.target.value)}
           onKeyDown={(e) => {
@@ -412,7 +412,11 @@ export function FilesPanel({
           }}
           spellCheck={false}
           aria-label="Remote path"
-          className="h-7 min-w-0 flex-1 rounded-md border border-line bg-inset px-2 font-mono text-[11.5px] text-fg focus:border-accent"
+          className="min-w-0 flex-1"
+          classNames={{
+            field: 'h-7 rounded-md',
+            input: 'px-2 font-mono text-[11.5px]'
+          }}
         />
         <Select
           ariaLabel="Upload conflict policy"
@@ -435,9 +439,13 @@ export function FilesPanel({
         <div className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger-soft px-3 py-2 text-[12px] text-danger">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
           <span className="flex-1">{error}</span>
-          <button onClick={() => setError(null)} aria-label="Dismiss error">
+          <IconButton
+            label="Dismiss error"
+            onClick={() => setError(null)}
+            className="h-5 w-5 shrink-0 text-danger hover:bg-danger-soft hover:text-danger"
+          >
             <X size={12} />
-          </button>
+          </IconButton>
         </div>
       )}
 
@@ -482,7 +490,8 @@ export function FilesPanel({
             } ${col.align === "right" ? "justify-end" : "justify-start"}`}
             style={col.flexible ? undefined : { width: cols.widthOf(col.key) }}
           >
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 if (col.key !== "mode") {
                   if (sortKey === col.key) setSortAsc((v) => !v)
@@ -492,13 +501,13 @@ export function FilesPanel({
                   }
                 }
               }}
-              className={`truncate text-[11px] font-semibold uppercase tracking-wider transition-colors duration-150 hover:text-fg ${
+              className={`h-auto min-h-0 shrink truncate rounded-none p-0 text-[11px] font-semibold uppercase tracking-wider hover:bg-transparent ${
                 sortKey === col.key ? "text-accent" : "text-faint"
               }`}
             >
               {col.label}
               {sortKey === col.key ? (sortAsc ? " ↑" : " ↓") : ""}
-            </button>
+            </Button>
             <ColumnResizer
               currentWidth={cols.widthOf(col.key)}
               onResize={(w) => cols.setWidth(col.key, w)}
@@ -506,14 +515,13 @@ export function FilesPanel({
           </div>
         ))}
 
-        <button
+        <IconButton
+          label="Column settings"
           onClick={() => setColMenuOpen((v) => !v)}
-          title="Show or hide columns"
-          aria-label="Column settings"
-          className="ml-auto shrink-0 rounded p-1 text-faint transition-colors hover:bg-panel-2 hover:text-fg"
+          className="ml-auto h-6 w-6 shrink-0 text-faint hover:bg-panel-2 hover:text-fg"
         >
           <Columns3 size={13} />
-        </button>
+        </IconButton>
         {colMenuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setColMenuOpen(false)} />
@@ -522,29 +530,26 @@ export function FilesPanel({
                 Columns
               </p>
               {COLUMNS.map((col) => (
-                <label
+                <Checkbox
                   key={col.key}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] text-muted hover:bg-panel-2 hover:text-fg"
-                >
-                  <input
-                    type="checkbox"
-                    checked={cols.state.visible[col.key]}
-                    onChange={() => cols.toggleColumn(col.key)}
-                    className="h-3.5 w-3.5 accent-[var(--accent)]"
-                  />
-                  {col.label}
-                </label>
+                  checked={cols.state.visible[col.key]}
+                  onCheckedChange={() => cols.toggleColumn(col.key)}
+                  label={col.label}
+                  size="compact"
+                  labelClassName="w-full gap-2 rounded-md px-2 py-1.5 text-[12.5px] text-muted hover:bg-panel-2 hover:text-fg"
+                />
               ))}
               <div className="my-1 h-px bg-line-soft" />
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => {
                   cols.resetWidths()
                   setColMenuOpen(false)
                 }}
-                className="w-full rounded-md px-2 py-1.5 text-left text-[12px] text-muted hover:bg-panel-2 hover:text-fg"
+                className="h-auto min-h-0 w-full justify-start rounded-md px-2 py-1.5 text-left text-[12px] font-normal text-muted hover:bg-panel-2 hover:text-fg"
               >
                 Reset widths
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -602,14 +607,14 @@ export function FilesPanel({
                       isSelected ? 'bg-accent-soft text-fg' : 'text-muted hover:bg-panel-2 hover:text-fg'
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggle(entry.path)}
-                      onClick={(e) => e.stopPropagation()}
-                      aria-label={`Select ${entry.name}`}
-                      className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
-                    />
+                    <span onClick={(e) => e.stopPropagation()} className="contents">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggle(entry.path)}
+                        size="compact"
+                        aria-label={`Select ${entry.name}`}
+                      />
+                    </span>
                     {entry.kind === 'dir' ? (
                       <FolderClosed size={14} className="shrink-0 text-accent" />
                     ) : (
@@ -733,15 +738,16 @@ export function FilesPanel({
                 Skip files that exist
               </Button>
             </div>
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 setPendingUpload(null)
                 setConflicts([])
               }}
-              className="mt-3 w-full text-center text-[11.5px] text-faint hover:text-muted"
+              className="mt-3 h-auto min-h-0 w-full justify-center p-0 text-[11.5px] font-normal text-faint hover:bg-transparent hover:text-muted"
             >
               Cancel upload
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -861,19 +867,19 @@ function RowContextMenu({
     action: () => void,
     opts: { danger?: boolean; disabled?: boolean } = {}
   ) => (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       onClick={action}
       disabled={opts.disabled}
-      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors duration-100 disabled:opacity-40 ${
+      className={`h-auto min-h-0 w-full justify-start gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] font-normal hover:bg-panel-2 ${
         opts.danger
           ? 'text-danger hover:bg-danger-soft'
-          : 'text-muted hover:bg-panel-2 hover:text-fg'
+          : 'text-muted hover:text-fg'
       }`}
     >
       {icon}
       {label}
-    </button>
+    </Button>
   )
 
   return (

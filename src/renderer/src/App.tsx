@@ -13,7 +13,7 @@ import { HostKeyDialog } from './components/HostKeyDialog'
 import { KiDialog } from './components/KiDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TransferDialog } from './components/TransferDialog'
-import { Spinner } from './components/ui'
+import { Button, Spinner } from './components/ui'
 
 function isTerminalFocused(): boolean {
   const el = document.activeElement
@@ -192,29 +192,32 @@ function Sidebar() {
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-line p-3">
-        <button
+        <Button
+          variant="outline"
           onClick={() => openServerForm(null)}
-          className="flex h-9 items-center justify-center gap-2 rounded-lg border border-accent/40 px-3 text-[13px] font-medium text-accent transition-colors duration-150 hover:border-accent hover:bg-accent-soft"
+          className="h-9 w-full justify-center rounded-lg border-accent/40 px-3 text-[13px] text-accent hover:border-accent hover:bg-accent-soft"
         >
           <Plus size={15} />
           Add server
-        </button>
+        </Button>
         <div className="flex gap-1">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => setSettingsOpen(true)}
-            className="flex h-9 flex-1 items-center gap-2 rounded-lg px-3 text-[13px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg"
+            className="h-9 flex-1 justify-start gap-2 rounded-lg px-3 text-[13px] font-normal text-muted hover:bg-panel-2 hover:text-fg"
           >
             <Settings size={15} />
             Settings
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => void window.sshvault.vaultLock().then(() => useVault.getState().applyLocked())}
-            className="flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] text-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg"
+            className="h-9 justify-start gap-2 rounded-lg px-3 text-[13px] font-normal text-muted hover:bg-panel-2 hover:text-fg"
             title="Lock now (Ctrl+Shift+L)"
           >
             <Lock size={15} />
             Lock
-          </button>
+          </Button>
         </div>
       </div>
     </aside>
@@ -233,15 +236,16 @@ function SidebarItem({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
       onClick={onClick}
-      className={`flex h-9 items-center gap-2.5 rounded-lg px-3 text-[13px] transition-colors duration-150 ${
+      className={`h-9 justify-start gap-2.5 rounded-lg px-3 text-[13px] font-normal ${
         active ? 'bg-panel-2 font-medium text-fg' : 'text-muted hover:bg-panel-2/60 hover:text-fg'
       }`}
     >
       <span className={active ? 'text-accent' : 'text-faint'}>{icon}</span>
       <span className="truncate">{label}</span>
-    </button>
+    </Button>
   )
 }
 
