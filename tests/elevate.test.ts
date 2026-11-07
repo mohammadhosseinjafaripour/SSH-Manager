@@ -25,36 +25,36 @@ function makeDetector(nonce: string): { detector: ElevateDetector; rec: Recorded
 const marker = (nonce: string) => `[SSHVAULT:${nonce}]`
 
 describe('buildElevateLine', () => {
-  it('validates with sudo -v, restores echo, THEN starts the shell', () => {
+  it('uses exactly ONE sudo invocation (no ticket-cache dependency)', () => {
     const nonce = makeNonce()
-    expect(buildElevateLine('sudo -s', '', nonce)).toBe(
-      `stty -echo; sudo -S -k -v -p '[SSHVAULT:${nonce}]' && stty echo && sudo -s; stty echo`
-    )
+    const line = buildElevateLine('sudo -s', '', nonce)
+    expect(line).toBe(`stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -s; stty echo`)
+    // REGRESSION: the old design ran `sudo -v` and then a second `sudo`. On a
+    // server with timestamp_timeout=0 ("always prompt") the ticket never
+    // caches, so the second sudo prompted again with its own prompt format —
+    // which the detector cannot answer, leaving the user typing the password.
+    expect(line.match(/\bsudo\b/g)).toHaveLength(1)
+    expect(line).not.toContain('-v')
   })
 
   it('injects the marker into every preset', () => {
     const nonce = makeNonce()
-    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`]' && stty echo && sudo -i;`)
-    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' && stty echo && sudo su -;`)
+    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`]' -i;`)
+    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' su -;`)
   })
 
   it('supports custom sudo commands', () => {
     const nonce = makeNonce()
     const line = buildElevateLine('custom', 'sudo -u admin -s', nonce)
-    expect(line).toBe(
-      `stty -echo; sudo -S -k -v -p '[SSHVAULT:${nonce}]' && stty echo && sudo -u admin -s; stty echo`
-    )
+    expect(line).toBe(`stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -u admin -s; stty echo`)
   })
 
-  it('REGRESSION: echo is restored BEFORE the root shell starts', () => {
-    // `sudo -s` runs a shell inside sudo, so a trailing `stty echo` would only
-    // run after that shell exits — leaving the whole root session with echo
-    // off (typing works but is invisible). Echo must be restored first.
+  it('restores echo on BOTH success and failure (uses `;`, not `&&`)', () => {
+    // `... sudo ...; stty echo` runs the restore whether sudo exits 0 or not.
+    // With `&&` a failed sudo would leave echo off for the rest of the session.
     const line = buildElevateLine('sudo -s', '', makeNonce())
-    const echoIdx = line.indexOf('&& stty echo &&')
-    const shellIdx = line.indexOf('&& sudo -s')
-    expect(echoIdx).toBeGreaterThan(-1)
-    expect(shellIdx).toBeGreaterThan(echoIdx)
+    expect(line).toContain(`]' -s; stty echo`)
+    expect(line).not.toContain(`]' -s && stty echo`)
   })
 
   it('contains no secrets and keeps a trailing echo safety net', () => {
@@ -118,6 +118,25 @@ describe('ElevateDetector invariants', () => {
     expect(rec.sends).toBe(0)
     detector.feed(`${marker(nonce)} `) // prompt finally arrives
     expect(rec.sends).toBe(1) // display-only timer made no write; detector still armed
+    detector.dispose()
+  })
+
+  it('REGRESSION: an UNMARKED second sudo prompt is never answered', () => {
+    // What timestamp_timeout=0 used to produce with the old two-phase line:
+    // phase 1 prompts with our marker, then phase 2 (`sudo -s`) prompts again
+    // in sudo's own format. The user saw the app "asking password again".
+    // The line is single-invocation now, so this must never happen — and if a
+    // server ever emits an unmarked prompt, the app must not write a secret to
+    // it (it could be any program asking for input).
+    const nonce = 'abc123'
+    const { detector, rec } = makeDetector(nonce)
+    detector.feed(`${marker(nonce)} `)
+    expect(rec.sends).toBe(1)
+    // sudo's own prompt formats, none carrying our nonce
+    detector.feed('\r\n[sudo: authenticate] Password: ')
+    detector.feed('\r\n[sudo] password for ubuntu: ')
+    vi.advanceTimersByTime(60_000)
+    expect(rec.sends).toBe(1) // exactly one write, ever
     detector.dispose()
   })
 

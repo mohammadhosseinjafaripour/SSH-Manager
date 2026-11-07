@@ -10,12 +10,16 @@
  *    bare. Matching only the bare form guarantees we never react to our own
  *    echo — which would race `stty -echo` and leak the password on screen.
  * 2. Never on timeout, never on retry, never speculatively. On servers where
- *    sudo never prompts (NOPASSWD, missing sudo, cached ticket) nothing is
- *    ever written; the detector only *reports* status.
- * 3. No timed writes of any kind. Echo is restored by the trailing
+ *    sudo never prompts (NOPASSWD, missing sudo) nothing is ever written; the
+ *    detector only *reports* status.
+ * 3. Exactly one sudo invocation. Authenticating and starting the shell happen
+ *    in the same sudo process, so the flow never depends on the timestamp
+ *    ticket being reusable. `timestamp_timeout=0` ("always prompt") is common
+ *    and makes a separate `sudo -v` pre-check useless — see buildElevateLine.
+ * 4. No timed writes of any kind. Echo is restored by the trailing
  *    `; stty echo` in the command itself; a timed write could be consumed by
  *    sudo as a second password attempt and lock the account.
- * 4. Zero automatic retries: one failed attempt proves the stored secret
+ * 5. Zero automatic retries: one failed attempt proves the stored secret
  *    wrong; retrying feeds pam_faillock.
  */
 
@@ -66,26 +70,38 @@ export function makeNonce(): string {
  * Builds the elevation line for a preset ("sudo -s", "sudo -i", "sudo su -")
  * or a custom command that must start with `sudo`.
  *
- *   stty -echo; sudo -S -k -v -p '[SSHVAULT:<nonce>]' && stty echo && sudo <rest>; stty echo
+ *   stty -echo; sudo -S -k -p '[SSHVAULT:<nonce>]' <rest>; stty echo
  *
- * Two phases, because `sudo -s` runs a shell INSIDE sudo: a trailing
- * `stty echo` would only run after that root shell exits, leaving echo off
- * for the whole session (typing works but is invisible).
+ * ONE sudo invocation, on purpose. An earlier design authenticated with
+ * `sudo -v` first and then started the shell through a second `sudo`, relying
+ * on the timestamp ticket from the first call. That breaks whenever the ticket
+ * cannot be reused:
  *
- * 1. `sudo -v` validates the password and caches a ticket. `-S` reads the
- *    password from stdin (prompt → stderr → PTY), `-k` makes the prompt
- *    deterministic, `stty -echo` hides the password while it is read.
- * 2. On success, `stty echo` restores echo in the USER's shell, then the
- *    elevation command runs with the cached ticket — so the root shell
- *    starts with echo ON.
+ *   - `timestamp_timeout=0` in sudoers means "always prompt for a password",
+ *     so no ticket is ever cached;
+ *   - `timestamp_type` variants and some PAM setups likewise fail to share it.
  *
- * The trailing `; stty echo` is a safety net for the failure path (sudo
- * exits without starting a shell).
+ * On such servers the second sudo prompted again — with sudo's own prompt
+ * (e.g. `[sudo: authenticate] Password:`), not our marker — so the app, which
+ * answers exactly one marked prompt, could not respond and the session sat
+ * waiting for input the user had to type by hand.
+ *
+ * Authenticating and starting the shell in the same sudo process removes the
+ * dependency entirely: whatever the ticket policy, there is exactly one prompt
+ * and it carries our marker.
+ *
+ * Echo: `stty -echo` hides the password while sudo reads it from stdin. The
+ * separator before the trailing `stty echo` is `;`, not `&&`, so echo is
+ * restored whether sudo succeeds or fails — verified behaviour, see
+ * tests/elevate.test.ts. While the root shell runs, bash's readline redraws
+ * each typed character rather than relying on the pty ECHO flag, so typing
+ * stays visible; the trailing command restores the flag when that shell exits.
+ * The "Restore echo" button on the failure banner remains a manual fallback.
  */
 export function buildElevateLine(preset: string, customCommand: string, nonce: string): string {
   const base = preset === 'custom' ? customCommand.trim() : preset
   const rest = base.replace(/^\s*sudo\b\s*/, '').trim()
-  return `stty -echo; sudo -S -k -v -p '${ELEVATE_MARKER_PREFIX}${nonce}]' && stty echo && sudo ${rest}; stty echo`
+  return `stty -echo; sudo -S -k -p '${ELEVATE_MARKER_PREFIX}${nonce}]' ${rest}; stty echo`
 }
 
 /** Finds a *bare* occurrence of the marker (not wrapped in single quotes). */

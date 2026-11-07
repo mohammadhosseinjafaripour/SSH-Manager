@@ -237,11 +237,11 @@ class MockPort implements SessionPort {
 
   private startElevation(): void {
     const nonce = randomUUID().slice(0, 6)
-    // Mirrors the real two-phase sequence: `sudo -v` validates, echo is
-    // restored BEFORE the root shell starts.
+    // Mirrors the real single-invocation line: authenticating and starting the
+    // shell happen in one sudo process, so there is exactly one prompt.
     this.post({
       type: 'data',
-      data: `stty -echo; sudo -S -k -v -p '[SSHVAULT:${nonce}]' && stty echo && sudo -s; stty echo\r\n`
+      data: `stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -s; stty echo\r\n`
     })
     this.echo = false
     // …then sudo prints the bare marker prompt.
