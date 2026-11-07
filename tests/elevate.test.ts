@@ -3,25 +3,22 @@ import {
   ElevateDetector,
   buildElevateLine,
   makeNonce,
+  stripAnsi,
   type ElevateStatus
 } from '../src/main/ssh/elevate'
 
 interface Recorded {
   sends: number
   statuses: Array<{ status: ElevateStatus; detail?: string }>
-  shellReady: number
 }
 
 function makeDetector(nonce: string): { detector: ElevateDetector; rec: Recorded } {
-  const rec: Recorded = { sends: 0, statuses: [], shellReady: 0 }
+  const rec: Recorded = { sends: 0, statuses: [] }
   const detector = new ElevateDetector(nonce, {
     onSendPassword: () => {
       rec.sends++
     },
-    onStatus: (status, detail) => rec.statuses.push({ status, detail }),
-    onShellReady: () => {
-      rec.shellReady++
-    }
+    onStatus: (status, detail) => rec.statuses.push({ status, detail })
   })
   return { detector, rec }
 }
@@ -29,42 +26,48 @@ function makeDetector(nonce: string): { detector: ElevateDetector; rec: Recorded
 const marker = (nonce: string) => `[SSHVAULT:${nonce}]`
 
 describe('buildElevateLine', () => {
-  it('uses exactly ONE sudo invocation (no ticket-cache dependency)', () => {
+  it('lets sudo own the terminal: no -S, no stty', () => {
     const nonce = makeNonce()
     const line = buildElevateLine('sudo -s', '', nonce)
-    expect(line).toBe(`stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -s; stty echo`)
-    // REGRESSION: the old design ran `sudo -v` and then a second `sudo`. On a
-    // server with timestamp_timeout=0 ("always prompt") the ticket never
-    // caches, so the second sudo prompted again with its own prompt format —
-    // which the detector cannot answer, leaving the user typing the password.
+    expect(line).toBe(`sudo -k -p '[SSHVAULT:${nonce}]' -s`)
+    // `-S` reads the password from stdin, which forces the caller to manage
+    // terminal echo by hand. sudo reading from the TTY turns echo off itself
+    // and restores it before the root shell starts — no app-side write, so
+    // nothing can race the user's typing.
+    expect(line).not.toContain('-S')
+    expect(line).not.toContain('stty')
+  })
+
+  it('uses exactly ONE sudo invocation (no ticket-cache dependency)', () => {
+    const line = buildElevateLine('sudo -s', '', makeNonce())
     expect(line.match(/\bsudo\b/g)).toHaveLength(1)
+    // The old two-phase design (`sudo -v` then `sudo -s`) prompted twice on
+    // servers with timestamp_timeout=0, which never cache a ticket.
     expect(line).not.toContain('-v')
   })
 
   it('injects the marker into every preset', () => {
     const nonce = makeNonce()
-    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`]' -i;`)
-    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' su -;`)
+    expect(buildElevateLine('sudo -i', '', nonce)).toContain(`]' -i`)
+    expect(buildElevateLine('sudo su -', '', nonce)).toContain(`]' su -`)
   })
 
   it('supports custom sudo commands', () => {
     const nonce = makeNonce()
-    const line = buildElevateLine('custom', 'sudo -u admin -s', nonce)
-    expect(line).toBe(`stty -echo; sudo -S -k -p '[SSHVAULT:${nonce}]' -u admin -s; stty echo`)
+    expect(buildElevateLine('custom', 'sudo -u admin -s', nonce)).toBe(
+      `sudo -k -p '[SSHVAULT:${nonce}]' -u admin -s`
+    )
   })
 
-  it('restores echo on BOTH success and failure (uses `;`, not `&&`)', () => {
-    // `... sudo ...; stty echo` runs the restore whether sudo exits 0 or not.
-    // With `&&` a failed sudo would leave echo off for the rest of the session.
+  it('REGRESSION: never writes anything into the shell after elevation', () => {
+    // The 0.6.4 "onShellReady" handler wrote `stty echo\r` into the live root
+    // shell. If the user was already typing, that write landed mid-line and the
+    // `\r` submitted their half-typed command — reported as
+    // "nvalid: command not found" plus a stray bash continuation prompt.
     const line = buildElevateLine('sudo -s', '', makeNonce())
-    expect(line).toContain(`]' -s; stty echo`)
-    expect(line).not.toContain(`]' -s && stty echo`)
-  })
-
-  it('contains no secrets and keeps a trailing echo safety net', () => {
-    const line = buildElevateLine('sudo -s', '', makeNonce())
-    expect(line.endsWith('; stty echo')).toBe(true)
-    expect(line.startsWith('stty -echo;')).toBe(true)
+    // Only the password (written on the marked prompt) ever goes to the PTY.
+    expect(line.endsWith('-s')).toBe(true)
+    expect(line).not.toMatch(/stty|echo\s*$/)
   })
 })
 
@@ -189,72 +192,23 @@ describe('ElevateDetector invariants', () => {
     detector.dispose()
   })
 
-  describe('echo restore (onShellReady)', () => {
-    // `sudo -s` runs a shell INSIDE sudo, so the trailing `; stty echo` in the
-    // elevation line cannot execute until that shell exits. Echo therefore
-    // stays off for the whole session: keys reach the shell and commands run,
-    // but nothing is drawn. The session must be told when it is safe to send
-    // `stty echo` into the root shell.
-
-    it('REGRESSION: fires once after a root prompt, so echo can be restored', () => {
-      const nonce = 'abc123'
-      const { detector, rec } = makeDetector(nonce)
-      detector.feed(`${marker(nonce)} `)
-      expect(rec.shellReady).toBe(0) // not before the shell is proven
-      detector.feed('\r\nroot@webprod:~# ')
-      expect(rec.shellReady).toBe(1)
-      detector.dispose()
-    })
-
-    it('fires only once even if more prompts arrive', () => {
-      const nonce = 'abc123'
-      const { detector, rec } = makeDetector(nonce)
-      detector.feed(`${marker(nonce)} `)
-      detector.feed('\r\nroot@webprod:~# ')
-      detector.feed('ls\r\nfile.txt\r\nroot@webprod:~# ')
-      detector.feed('\r\nroot@webprod:~# ')
-      expect(rec.shellReady).toBe(1)
-      detector.dispose()
-    })
-
-    it('SAFETY: never fires while sudo is still waiting for the password', () => {
-      // Writing to sudo at this point would be read as a second password
-      // attempt and feed pam_faillock.
-      const nonce = 'abc123'
-      const { detector, rec } = makeDetector(nonce)
-      detector.feed('user@host:~$ ')
-      expect(rec.shellReady).toBe(0)
-      // Even a prompt-looking line before our marker appeared is not trusted.
-      detector.feed('\r\n[sudo] password for user: ')
-      vi.advanceTimersByTime(3_000)
-      expect(rec.shellReady).toBe(0)
-      expect(rec.sends).toBe(0)
-      detector.dispose()
-    })
-
-    it('fires for NOPASSWD servers (no marker, shell prompt after the wait)', () => {
-      const nonce = 'abc123'
-      const { detector, rec } = makeDetector(nonce)
-      // sudo never prompts; after the no-prompt window the shell is running
-      // but echo is still off because the trailing command cannot have run.
-      detector.feed('Welcome to Ubuntu\r\nroot@webprod:~# ')
-      expect(rec.shellReady).toBe(0)
-      vi.advanceTimersByTime(6_000)
-      detector.feed('\r\nroot@webprod:~# ')
-      expect(rec.shellReady).toBe(1)
-      expect(rec.sends).toBe(0) // never wrote a password
-      detector.dispose()
-    })
-
-    it('recognises a non-root prompt too (customised or non-elevated shell)', () => {
-      const nonce = 'abc123'
-      const { detector, rec } = makeDetector(nonce)
-      detector.feed(`${marker(nonce)} `)
-      detector.feed('\r\nubuntu@webprod:~$ ')
-      expect(rec.shellReady).toBe(1)
-      detector.dispose()
-    })
+  it('REGRESSION: recognises a COLOURED root prompt (ANSI codes after the #)', () => {
+    // A themed PS1 puts the reset sequence after the `#`, so a regex anchored
+    // on `#\s*$` never matched and the status stayed at "unverified".
+    const nonce = 'abc123'
+    const { detector, rec } = makeDetector(nonce)
+    detector.feed(`${marker(nonce)} `)
+    detector.feed('\r\n\x1b[38;5;2mroot@traefikrsv\x1b[0m:\x1b[34m/home/ubuntu\x1b[0m# \x1b[0m')
+    expect(rec.statuses.at(-1)?.status).toBe('elevated')
+    detector.dispose()
   })
+
+  it('stripAnsi removes CSI and OSC sequences', () => {
+    expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe('red')
+    expect(stripAnsi('\x1b]0;title\x07text')).toBe('text')
+    expect(stripAnsi('plain')).toBe('plain')
+  })
+
 
   it('no definitive result after send → elevated-unverified (display only)', () => {
     const nonce = 'abc123'

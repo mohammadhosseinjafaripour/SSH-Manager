@@ -406,20 +406,11 @@ export class SshSession {
         this.post({ type: 'status', status, detail })
       },
       onAbort: () => {
-        // sudo is still waiting for another password attempt. Abort it and
-        // restore echo, otherwise the user is left with a terminal that
-        // accepts input but displays nothing.
+        // sudo is still waiting for another password attempt and the app
+        // cannot answer it. Cancel it so the user is not stuck at a prompt
+        // that looks hung. No `stty` write: sudo owns echo, and writing into a
+        // shell the user may already be typing in corrupts their input.
         this.stream?.write('\x03')
-        setTimeout(() => this.stream?.write('stty echo\r'), 120)
-      },
-      onShellReady: () => {
-        // The elevation line is a single `sudo -s`, so its trailing
-        // `; stty echo` cannot run until that root shell exits — echo would
-        // stay off for the entire session (keys reach the shell and execute,
-        // nothing is drawn). Once a prompt proves the shell is up, ask it to
-        // turn echo back on. The command is echoed by the shell itself only if
-        // echo is already on, so this is safe to run either way.
-        this.stream?.write('stty echo\r')
       }
     })
     const line = buildElevateLine(elevate.preset, elevate.customCommand, nonce)
