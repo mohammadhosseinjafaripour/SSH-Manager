@@ -41,6 +41,17 @@ export interface ElevateHandlers {
    * the user is never stranded with an invisible terminal.
    */
   onAbort?(): void
+  /**
+   * Called exactly once, as soon as a root shell is proven to be running.
+   *
+   * Needed because the elevation line is a single `sudo -s`: the trailing
+   * `; stty echo` in that line cannot run until the root shell exits, so echo
+   * stays off for the whole session (keys reach the shell and execute, but are
+   * never drawn). The session uses this signal to run `stty echo` in the root
+   * shell. It fires only on a *proven* shell, never on a timer: writing to sudo
+   * while it still waits for a password would count as a second attempt.
+   */
+  onShellReady?(): void
 }
 
 /** How long to keep watching for a prompt before reporting "no prompt". */
@@ -90,13 +101,21 @@ export function makeNonce(): string {
  * dependency entirely: whatever the ticket policy, there is exactly one prompt
  * and it carries our marker.
  *
- * Echo: `stty -echo` hides the password while sudo reads it from stdin. The
- * separator before the trailing `stty echo` is `;`, not `&&`, so echo is
- * restored whether sudo succeeds or fails — verified behaviour, see
- * tests/elevate.test.ts. While the root shell runs, bash's readline redraws
- * each typed character rather than relying on the pty ECHO flag, so typing
- * stays visible; the trailing command restores the flag when that shell exits.
- * The "Restore echo" button on the failure banner remains a manual fallback.
+ * Echo: `stty -echo` hides the password while sudo reads it from stdin. It
+ * CANNOT be undone by the trailing `; stty echo` in this line — `sudo -s` runs
+ * a shell *inside* sudo, so that command only executes once the root shell
+ * exits, leaving echo off for the entire session. The symptom is confusing:
+ * keystrokes reach the shell and commands run, but nothing is drawn; Enter and
+ * Ctrl+C seem fine because they produce output.
+ *
+ * (`bash`/`zsh` readline redraws typed characters itself, so some servers look
+ * fine — but plenty do not, e.g. when sudo runs a plain `sh`, or when the
+ * terminal is in a state readline does not repaint. Relying on it is a bug.)
+ *
+ * Echo is therefore restored by the session writing `stty echo` into the root
+ * shell as soon as a prompt proves it is running (ElevateDetector
+ * `onShellReady`). The trailing `; stty echo` remains as the safety net for the
+ * failure path, where the root shell never starts.
  */
 export function buildElevateLine(preset: string, customCommand: string, nonce: string): string {
   const base = preset === 'custom' ? customCommand.trim() : preset
@@ -121,6 +140,10 @@ export class ElevateDetector {
   private buf = ''
   private sent = false
   private hardSettled = false
+  /** onShellReady is fired at most once. */
+  private shellReadyFired = false
+  /** True once the no-prompt window elapsed (NOPASSWD / missing sudo). */
+  private noPromptElapsed = false
   private noPromptTimer: ReturnType<typeof setTimeout> | null = null
   private unverifiedTimer: ReturnType<typeof setTimeout> | null = null
   private readonly marker: string
@@ -132,6 +155,7 @@ export class ElevateDetector {
     // (slow LDAP) still gets its password.
     this.noPromptTimer = setTimeout(() => {
       this.noPromptTimer = null
+      this.noPromptElapsed = true
       if (!this.sent && !this.hardSettled) {
         this.handlers.onStatus(
           'elevated-no-prompt',
@@ -169,10 +193,33 @@ export class ElevateDetector {
       }
     }
 
-    // Best-effort early proof: a root prompt (`# ` at end of a line).
-    if (this.sent && /(?:^|\n)[^\n]{0,64}#\s*$/.test(this.buf)) {
-      this.settle('elevated', 'Root shell active')
+    // A shell prompt is proof that the root shell (or, on NOPASSWD servers,
+    // sudo's shell) is running — the only safe moment to write to it.
+    if (this.isShellPrompt(this.buf)) {
+      this.fireShellReady()
+      if (/(?:^|\n)[^\n]{0,64}#\s*$/.test(this.buf)) {
+        this.settle('elevated', 'Root shell active')
+      }
     }
+  }
+
+  /**
+   * A command prompt at the end of the buffer. `#` means root; `$` covers
+   * non-root shells and servers whose root prompt is customised.
+   *
+   * Only trusted once sudo has had its chance to read the password: either the
+   * password was sent, or the no-prompt window elapsed (NOPASSWD). Writing to
+   * sudo while it still waits for a password would be a second attempt.
+   */
+  private isShellPrompt(buf: string): boolean {
+    if (!this.sent && !this.noPromptElapsed) return false
+    return /(?:^|\n)[^\n]{0,64}[#$]\s*$/.test(buf)
+  }
+
+  private fireShellReady(): void {
+    if (this.shellReadyFired || this.hardSettled) return
+    this.shellReadyFired = true
+    this.handlers.onShellReady?.()
   }
 
   /** Stream closed — release timers; session status takes over. */

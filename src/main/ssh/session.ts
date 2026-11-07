@@ -411,6 +411,15 @@ export class SshSession {
         // accepts input but displays nothing.
         this.stream?.write('\x03')
         setTimeout(() => this.stream?.write('stty echo\r'), 120)
+      },
+      onShellReady: () => {
+        // The elevation line is a single `sudo -s`, so its trailing
+        // `; stty echo` cannot run until that root shell exits — echo would
+        // stay off for the entire session (keys reach the shell and execute,
+        // nothing is drawn). Once a prompt proves the shell is up, ask it to
+        // turn echo back on. The command is echoed by the shell itself only if
+        // echo is already on, so this is safe to run either way.
+        this.stream?.write('stty echo\r')
       }
     })
     const line = buildElevateLine(elevate.preset, elevate.customCommand, nonce)

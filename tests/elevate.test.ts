@@ -9,15 +9,19 @@ import {
 interface Recorded {
   sends: number
   statuses: Array<{ status: ElevateStatus; detail?: string }>
+  shellReady: number
 }
 
 function makeDetector(nonce: string): { detector: ElevateDetector; rec: Recorded } {
-  const rec: Recorded = { sends: 0, statuses: [] }
+  const rec: Recorded = { sends: 0, statuses: [], shellReady: 0 }
   const detector = new ElevateDetector(nonce, {
     onSendPassword: () => {
       rec.sends++
     },
-    onStatus: (status, detail) => rec.statuses.push({ status, detail })
+    onStatus: (status, detail) => rec.statuses.push({ status, detail }),
+    onShellReady: () => {
+      rec.shellReady++
+    }
   })
   return { detector, rec }
 }
@@ -183,6 +187,73 @@ describe('ElevateDetector invariants', () => {
     detector.feed('\r\nroot@webprod:~# ')
     expect(rec.statuses.at(-1)?.status).toBe('elevated')
     detector.dispose()
+  })
+
+  describe('echo restore (onShellReady)', () => {
+    // `sudo -s` runs a shell INSIDE sudo, so the trailing `; stty echo` in the
+    // elevation line cannot execute until that shell exits. Echo therefore
+    // stays off for the whole session: keys reach the shell and commands run,
+    // but nothing is drawn. The session must be told when it is safe to send
+    // `stty echo` into the root shell.
+
+    it('REGRESSION: fires once after a root prompt, so echo can be restored', () => {
+      const nonce = 'abc123'
+      const { detector, rec } = makeDetector(nonce)
+      detector.feed(`${marker(nonce)} `)
+      expect(rec.shellReady).toBe(0) // not before the shell is proven
+      detector.feed('\r\nroot@webprod:~# ')
+      expect(rec.shellReady).toBe(1)
+      detector.dispose()
+    })
+
+    it('fires only once even if more prompts arrive', () => {
+      const nonce = 'abc123'
+      const { detector, rec } = makeDetector(nonce)
+      detector.feed(`${marker(nonce)} `)
+      detector.feed('\r\nroot@webprod:~# ')
+      detector.feed('ls\r\nfile.txt\r\nroot@webprod:~# ')
+      detector.feed('\r\nroot@webprod:~# ')
+      expect(rec.shellReady).toBe(1)
+      detector.dispose()
+    })
+
+    it('SAFETY: never fires while sudo is still waiting for the password', () => {
+      // Writing to sudo at this point would be read as a second password
+      // attempt and feed pam_faillock.
+      const nonce = 'abc123'
+      const { detector, rec } = makeDetector(nonce)
+      detector.feed('user@host:~$ ')
+      expect(rec.shellReady).toBe(0)
+      // Even a prompt-looking line before our marker appeared is not trusted.
+      detector.feed('\r\n[sudo] password for user: ')
+      vi.advanceTimersByTime(3_000)
+      expect(rec.shellReady).toBe(0)
+      expect(rec.sends).toBe(0)
+      detector.dispose()
+    })
+
+    it('fires for NOPASSWD servers (no marker, shell prompt after the wait)', () => {
+      const nonce = 'abc123'
+      const { detector, rec } = makeDetector(nonce)
+      // sudo never prompts; after the no-prompt window the shell is running
+      // but echo is still off because the trailing command cannot have run.
+      detector.feed('Welcome to Ubuntu\r\nroot@webprod:~# ')
+      expect(rec.shellReady).toBe(0)
+      vi.advanceTimersByTime(6_000)
+      detector.feed('\r\nroot@webprod:~# ')
+      expect(rec.shellReady).toBe(1)
+      expect(rec.sends).toBe(0) // never wrote a password
+      detector.dispose()
+    })
+
+    it('recognises a non-root prompt too (customised or non-elevated shell)', () => {
+      const nonce = 'abc123'
+      const { detector, rec } = makeDetector(nonce)
+      detector.feed(`${marker(nonce)} `)
+      detector.feed('\r\nubuntu@webprod:~$ ')
+      expect(rec.shellReady).toBe(1)
+      detector.dispose()
+    })
   })
 
   it('no definitive result after send → elevated-unverified (display only)', () => {
