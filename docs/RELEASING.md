@@ -86,6 +86,18 @@ curl -sIL -o /dev/null -w "%{http_code}\n" \
    no title. A `PASS` line means the app really starts and paints. Never publish
    a build that does not pass.
 
+   Then check the tray / shortcut path, which the startup test does not cover:
+
+   ```bash
+   npm run smoke:instance
+   ```
+
+   It starts the app, closes its window (with no live sessions that destroys
+   the BrowserWindow while the tray keeps the app alive), launches the exe a
+   second time as a shortcut would, and requires a window to come back. This
+   is the regression test for "A JavaScript error occurred in the main
+   process" — a destroyed window reference being reused on relaunch.
+
 5. **Verify the published assets.** An upload that truncates or mangles the exe
    breaks every client's sha512 check — and the failure only shows up on the
    user's machine. This downloads the published file and compares it against

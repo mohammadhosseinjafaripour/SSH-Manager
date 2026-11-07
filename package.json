@@ -1,7 +1,7 @@
 {
   "name": "ssh-vault",
   "productName": "SSH Vault",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Secure, minimal SSH connection manager with an encrypted local vault and automatic sudo elevation",
   "private": true,
   "type": "module",
@@ -19,6 +19,7 @@
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder --win nsis portable",
     "smoke": "node scripts/smoke-startup.cjs",
+    "smoke:instance": "node scripts/smoke-single-instance.cjs",
     "verify": "npm run typecheck && npm run test && npm run lint && npm run audit"
   },
   "dependencies": {

@@ -26,11 +26,19 @@ export class UpdateService {
   private timer: ReturnType<typeof setInterval> | null = null
   private lastCheck = 0
   private wc: BrowserWindow | null = null
+  /** autoUpdater listeners are process-global; bind them once. */
+  private listenersBound = false
 
   constructor(private readonly enabled: GetSetting) {}
 
   attach(win: BrowserWindow): void {
     this.wc = win
+    // Re-attaching after the window was closed and recreated must not register
+    // the autoUpdater listeners a second time (they would fire twice per
+    // event). Only wire them once for the lifetime of the service.
+    if (this.listenersBound) return
+    this.listenersBound = true
+
     autoUpdater.autoDownload = true
     // Installing must stay a deliberate user action: we never quit the app on
     // our own while they may have live SSH sessions open.

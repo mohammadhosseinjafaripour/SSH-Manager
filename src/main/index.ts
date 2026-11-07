@@ -45,11 +45,32 @@ function trayIcon(): Electron.NativeImage {
   return img.isEmpty() ? nativeImage.createEmpty() : img.resize({ width: 16, height: 16 })
 }
 
+/**
+ * The window, but only if it is still usable.
+ *
+ * A BrowserWindow reference survives `destroy()` — calling `.restore()`,
+ * `.focus()` or `.webContents.send()` on it afterwards throws
+ * "Object has been destroyed" out of the main process, which Electron surfaces
+ * to the user as the "A JavaScript error occurred in the main process" dialog.
+ * Every path that touches the window outside a handler must go through this.
+ */
+function liveWindow(): BrowserWindow | null {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+}
+
 function showMainWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createWindow()
-    if (store && manager) manager.refreshWebContents(mainWindow.webContents)
+  const existing = liveWindow()
+  if (existing) {
+    if (existing.isMinimized()) existing.restore()
+    existing.show()
+    existing.focus()
+    return
   }
+  // Destroyed (or never created): rebuild and re-point every service at the
+  // new webContents, or they would keep writing into the freed one.
+  mainWindow = createWindow()
+  manager?.refreshWebContents(mainWindow.webContents)
+  updater?.attach(mainWindow)
   mainWindow.show()
   mainWindow.focus()
 }
@@ -121,6 +142,12 @@ function createWindow(): BrowserWindow {
 
   win.on('ready-to-show', () => win.show())
   win.on('close', () => handleWindowClose(win))
+  // Drop the reference as soon as the window is gone. Leaving a destroyed
+  // BrowserWindow in this variable is what allowed the second-instance crash:
+  // every later `if (mainWindow)` check passed while the object was dead.
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
 
   // The app renders exactly one origin: block navigation and pop-ups.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -143,16 +170,27 @@ function startAutoLock(): void {
     const idleLimit = store.getPayload().settings.idleLockMinutes * 60_000
     if (store.idleMs() >= idleLimit) {
       store.lock()
-      mainWindow?.webContents.send(VAULT_LOCKED_CHANNEL)
+      // `?.` alone is not enough: a destroyed window is non-null but throws
+      // when its webContents is touched. Live sessions keep running, so this
+      // timer can fire while the window is closed to the tray.
+      const win = liveWindow()
+      if (win) win.webContents.send(VAULT_LOCKED_CHANNEL)
     }
   }, 15_000)
 }
 
+/**
+ * A second launch (shortcut, Start menu, pinned taskbar) reaches the running
+ * instance here instead of starting a duplicate app. It must behave exactly
+ * like the tray click: reveal the window, recreating it if the user closed it.
+ *
+ * This used to call `mainWindow.restore()/focus()` directly. After closing the
+ * window to the tray, `mainWindow` was non-null but destroyed, so that threw
+ * "Object has been destroyed" and Electron showed its main-process error
+ * dialog — the bug this fixes.
+ */
 app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  }
+  showMainWindow()
 })
 
 app.whenReady().then(() => {
@@ -190,11 +228,12 @@ app.whenReady().then(() => {
 
   startAutoLock()
 
+  // macOS fires 'activate' when the dock icon is clicked. Reuse the same
+  // recreation path as the tray/shortcut so the manager is re-pointed at the
+  // new window instead of being replaced (which leaked the old one and left
+  // IPC bound to the previous webContents).
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow()
-      manager = new ConnectionManager(store!, mainWindow.webContents)
-    }
+    if (BrowserWindow.getAllWindows().length === 0) showMainWindow()
   })
 })
 
