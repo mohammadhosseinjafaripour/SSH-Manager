@@ -332,9 +332,10 @@ export function FilesPanel({
     setDragOver(false)
     const files = Array.from(e.dataTransfer.files ?? [])
     if (files.length === 0) return
-    const paths = await window.sshvault.resolveDroppedPaths({
-      files: files.map((f) => ({ path: (f as File & { path?: string }).path }))
-    })
+    // File.path no longer exists in Electron — resolve paths in the preload
+    // while the drop event still owns the File objects.
+    const paths = files.map((f) => window.sshvault.pathForFile(f)).filter(Boolean)
+    if (paths.length === 0) return
     // Names are known for dropped items, so we can detect conflicts precisely.
     await beginDrop(
       paths,

@@ -321,6 +321,8 @@ export interface Bridge {
   }): Promise<FilePickResult>
   vaultExportCsv(): Promise<FilePickResult>
   vaultImportPick(): Promise<ImportPickResult>
+  /** Picks an import file by absolute path (drag & drop) instead of a dialog. */
+  vaultImportFile(input: { path: string }): Promise<ImportPickResult>
   vaultImportApply(input: {
     exportPassword?: string
     mode: 'merge' | 'replace'
@@ -384,10 +386,12 @@ export interface Bridge {
     remotePaths: string[]
     kinds: RemoteEntry['kind'][]
   }): Promise<{ ok: boolean; downloaded: number; localDir?: string }>
-  /** Paths of files/folders dropped onto the window (absolute). */
-  resolveDroppedPaths(input: {
-    files: Array<{ path?: string }>
-  }): Promise<string[]>
+  /**
+   * Absolute path of a dropped File. `File.path` was removed from Electron, so
+   * this resolves it in the preload via `webUtils.getPathForFile` — it must be
+   * called synchronously while the drop event's File object is still alive.
+   */
+  pathForFile(file: File): string
   onTransferProgress(cb: (p: TransferProgress) => void): () => void
   /** Cancels the in-flight transfer on a connection, if any. */
   sftpCancel(input: { connectionId: string }): Promise<void>
@@ -471,6 +475,7 @@ export const BRIDGE_CHANNELS = {
   vaultExportEncrypted: 'vault:export-encrypted',
   vaultExportCsv: 'vault:export-csv',
   vaultImportPick: 'vault:import-pick',
+  vaultImportFile: 'vault:import-file',
   vaultImportApply: 'vault:import-apply',
   serversUpsert: 'servers:upsert',
   serversDelete: 'servers:delete',
@@ -500,7 +505,6 @@ export const BRIDGE_CHANNELS = {
   openReleases: 'update:open-releases',
   complete: 'terminal:complete',
   pickKeyFile: 'app:pick-key-file',
-  resolveDroppedPaths: 'app:resolve-dropped-paths',
   copySecret: 'secrets:copy',
   importScanPutty: 'import:scan-putty',
   importScanSshConfig: 'import:scan-sshconfig',

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { basename, extname } from 'node:path'
 import type { HostKeyPin, ImportSummary, ServerEntry, ServerUpsertInput } from '@shared/types'
 import { normalizeTags } from '@shared/schemas'
 import {
@@ -89,6 +91,36 @@ export function looksLikeEncryptedExport(raw: string): boolean {
   } catch {
     return false
   }
+}
+
+export const IMPORT_EXTENSIONS = ['.sshvault', '.csv', '.txt', '.json']
+
+export interface ImportCandidate {
+  raw: string
+  format: 'encrypted' | 'csv'
+  fileName: string
+}
+
+/**
+ * Reads an import candidate from disk and sniffs its format. Shared by the
+ * dialog picker and drag & drop so both flows accept exactly the same files.
+ * Throws invalid-input on anything unusable.
+ */
+export function loadImportFile(path: string): ImportCandidate {
+  const fileName = basename(path)
+  const ext = extname(fileName).toLowerCase()
+  if (!IMPORT_EXTENSIONS.includes(ext)) {
+    throw new Error(
+      `invalid-input:not an import file — expected ${IMPORT_EXTENSIONS.join(' or ')}`
+    )
+  }
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch {
+    throw new Error('invalid-input:could not read that file (moved, renamed or locked?)')
+  }
+  return { raw, format: looksLikeEncryptedExport(raw) ? 'encrypted' : 'csv', fileName }
 }
 
 // --------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -13,6 +13,9 @@ import { Button, Checkbox, Dialog, Field, PasswordInput, Spinner, Switch } from 
 import { friendlyError } from '../lib/errors'
 import { useUi } from '../stores/ui'
 import { useVault } from '../stores/vault'
+
+/** Extensions the import accepts — kept in sync with the main-process picker. */
+const IMPORT_EXTENSIONS = ['.sshvault', '.csv', '.txt', '.json']
 
 /**
  * Batch transfer of credentials: encrypted export/import (machine-to-machine
@@ -217,16 +220,65 @@ function ImportPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ summary: ImportSummary; warnings?: string[] } | null>(null)
+  const [dropping, setDropping] = useState(false)
+  const dragDepth = useRef(0)
+
+  const adopt = (r: ImportPickResult) => {
+    setPicked(r)
+    setError(null)
+    setResult(null)
+  }
 
   const pick = async () => {
     setError(null)
     setResult(null)
     try {
       const r = await window.sshvault.vaultImportPick()
-      if (r.ok) setPicked(r)
+      if (r.ok) adopt(r)
     } catch (err) {
       setError(friendlyError(err))
     }
+  }
+
+  /** Drag & drop: resolve the File to a path in the preload (File.path is gone
+   * from Electron), then let the main process read it — contents never cross. */
+  const pickDropped = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepth.current = 0
+    setDropping(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    if (!IMPORT_EXTENSIONS.includes(ext)) {
+      setError(`"${file.name}" is not an import file — expected ${IMPORT_EXTENSIONS.join(' or ')}`)
+      return
+    }
+    try {
+      const path = window.sshvault.pathForFile(file)
+      const r = await window.sshvault.vaultImportFile({ path })
+      if (r.ok) adopt(r)
+    } catch (err) {
+      setError(friendlyError(err))
+    }
+  }
+
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragDepth.current++
+    setDropping(true)
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDropping(false)
+  }
+  const onDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    // Must be prevented or Chromium replaces the whole app with the file.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
   }
 
   const run = async () => {
@@ -288,11 +340,19 @@ function ImportPanel() {
           </div>
         </div>
       ) : (
-        <div className="mt-5 flex flex-col gap-4">
+        <div
+          className="mt-5 flex flex-col gap-4"
+          onDragEnter={onDragEnter}
+          onDragLeave={onDragLeave}
+          onDragOver={onDragOver}
+          onDrop={(e) => void pickDropped(e)}
+        >
           <Button
             variant="outline"
             onClick={pick}
-            className="h-16 w-full justify-center gap-2 rounded-xl border-dashed text-[13px] font-normal text-muted hover:border-accent/60 hover:text-accent"
+            className={`h-16 w-full justify-center gap-2 rounded-xl border-dashed text-[13px] font-normal text-muted hover:border-accent/60 hover:text-accent ${
+              dropping ? 'border-accent bg-accent-soft text-accent' : ''
+            }`}
           >
             <FolderOpen size={16} />
             {picked?.ok && picked.fileName ? (
@@ -301,15 +361,17 @@ function ImportPanel() {
                 <span className="rounded border border-line bg-inset px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
                   {picked.format === 'encrypted' ? 'Encrypted' : 'CSV'}
                 </span>
-                <span className="text-faint">— click to choose another</span>
+                <span className="text-faint">— click or drop another</span>
               </span>
+            ) : dropping ? (
+              'Drop the file to use it…'
             ) : (
-              'Choose a .sshvault or .csv file…'
+              'Drop a .sshvault or .csv file here, or click to browse…'
             )}
           </Button>
 
           {picked?.ok && picked.format === 'encrypted' && (
-            <Field label="Export password" error={error ?? undefined}>
+            <Field label="Export password">
               <PasswordInput
                 value={password}
                 onChange={setPassword}
@@ -318,12 +380,10 @@ function ImportPanel() {
               />
             </Field>
           )}
-          {picked?.ok && picked.format === 'encrypted' && error && (
-            <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">
-              {error}
-            </p>
-          )}
-          {picked?.ok && picked.format === 'csv' && error && (
+          {/* Rendered for every failure — pick/drop errors too, which used to
+              be invisible because the panel only showed errors after a file
+              was successfully chosen. */}
+          {error && (
             <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">
               {error}
             </p>

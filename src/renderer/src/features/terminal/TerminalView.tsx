@@ -235,9 +235,9 @@ export function TerminalPane({ tab, isActive }: { tab: SessionTab; isActive: boo
     }
     const files = Array.from(e.dataTransfer.files ?? [])
     if (files.length === 0) return
-    const paths = await window.sshvault.resolveDroppedPaths({
-      files: files.map((f) => ({ path: (f as File & { path?: string }).path }))
-    })
+    // File.path no longer exists in Electron — the preload resolves each File
+    // to its absolute path while the drop event still owns the objects.
+    const paths = files.map((f) => window.sshvault.pathForFile(f)).filter(Boolean)
     if (paths.length === 0) {
       finishDrop('error', 'Could not read the dropped files')
       return

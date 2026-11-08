@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   BRIDGE_CHANNELS,
   SESSION_PORT_CHANNEL,
@@ -31,6 +31,7 @@ const api: Bridge = {
   vaultExportEncrypted: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportEncrypted, input),
   vaultExportCsv: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportCsv),
   vaultImportPick: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportPick),
+  vaultImportFile: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportFile, input),
   vaultImportApply: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportApply, input),
   serversUpsert: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.serversUpsert, input),
   serversDelete: (id) => ipcRenderer.invoke(BRIDGE_CHANNELS.serversDelete, id),
@@ -57,7 +58,10 @@ const api: Bridge = {
   healthCheck: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.healthCheck, input),
   complete: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.complete, input),
   pickKeyFile: () => ipcRenderer.invoke(BRIDGE_CHANNELS.pickKeyFile),
-  resolveDroppedPaths: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.resolveDroppedPaths, input),
+
+  // Runs in the preload, not over IPC: File objects cannot cross IPC, but
+  // webUtils can resolve them here while the drop event still owns them.
+  pathForFile: (file) => webUtils.getPathForFile(file),
 
   updateState: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateState),
   updateCheck: () => ipcRenderer.invoke(BRIDGE_CHANNELS.updateCheck),

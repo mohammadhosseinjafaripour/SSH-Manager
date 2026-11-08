@@ -19,7 +19,7 @@ import {
 import {
   applyImport,
   exportEncrypted,
-  looksLikeEncryptedExport,
+  loadImportFile,
   openEncryptedExport,
   serversFromCsv,
   serversToCsv
@@ -86,6 +86,15 @@ function toView(entry: ServerEntry): ServerView {
 
 function views(store: VaultStore): ServerView[] {
   return store.getPayload().servers.map(toView)
+}
+
+/**
+ * IPC replies must survive the structured clone across to the renderer; a JSON
+ * round-trip guarantees nothing exotic can ever sneak into a response and
+ * surface as "An object could not be cloned".
+ */
+function jsonClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 /** Known error classes cross IPC as their code; anything else is internal. */
@@ -528,13 +537,6 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     }
   )
 
-  handle('resolveDroppedPaths', (input: { files: Array<{ path?: string }> }) => {
-    // Electron hands dropped files as objects with an absolute `path`.
-    return (input?.files ?? [])
-      .map((f) => f?.path)
-      .filter((p): p is string => typeof p === 'string')
-  })
-
   // ---- import / export ------------------------------------------------------
 
   handle(
@@ -589,10 +591,20 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     })
     const file = result.filePaths[0]
     if (result.canceled || !file) return { ok: false }
-    const raw = readFileSync(file, 'utf8')
-    const format: 'encrypted' | 'csv' = looksLikeEncryptedExport(raw) ? 'encrypted' : 'csv'
+    const { raw, format, fileName } = loadImportFile(file)
     pendingImport = { raw, format }
-    return { ok: true, format, fileName: basename(file) }
+    return { ok: true, format, fileName }
+  })
+
+  // Drag & drop twin of the picker: the renderer hands over the absolute path
+  // it resolved from the dropped File; the file still never crosses IPC.
+  handle('vaultImportFile', (input: { path: string }) => {
+    if (!input || typeof input.path !== 'string' || !input.path.trim()) {
+      throw new Error('invalid-input:no file path in drop')
+    }
+    const { raw, format, fileName } = loadImportFile(input.path)
+    pendingImport = { raw, format }
+    return { ok: true, format, fileName }
   })
 
   handle(
@@ -604,19 +616,19 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
         const payload = await openEncryptedExport(raw, input.exportPassword ?? '')
         // Success — consume the pending pick.
         pendingImport = null
-        const summary = applyImport(
+        const summary = await applyImport(
           store,
           { servers: payload.servers, pinnedHostKeys: payload.includePinnedHostKeys ? payload.pinnedHostKeys : [] },
           input.mode
         )
-        return { servers: views(store), summary }
+        return jsonClone({ servers: views(store), summary })
       }
       const csv = serversFromCsv(raw)
       if (csv.inputs.length === 0 && csv.errors.length > 0) {
         throw new Error(`invalid-input:${csv.errors[0]}`)
       }
       pendingImport = null
-      const summary = applyImport(
+      const summary = await applyImport(
         store,
         {
           servers: csv.inputs.map((i) => ({
@@ -645,7 +657,7 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
         },
         input.mode
       )
-      return { servers: views(store), summary, warnings: csv.errors }
+      return jsonClone({ servers: views(store), summary, warnings: csv.errors })
     }
   )
 

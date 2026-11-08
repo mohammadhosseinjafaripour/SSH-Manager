@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import { VaultStore, UnlockFailedError } from '../src/main/vault/store'
 import {
   applyImport,
   exportEncrypted,
+  loadImportFile,
   openEncryptedExport,
   parseCsv,
   serversFromCsv,
@@ -166,6 +167,39 @@ describe('encrypted export / import', () => {
     expect(summary.replaced).toBe(true)
     expect(target.getPayload().servers.map((s) => s.name)).toEqual(['only'])
     expect(target.getPayload().pinnedHostKeys).toHaveLength(0)
+  })
+})
+
+describe('import file loading (dialog + drag & drop share it)', () => {
+  it('reads an encrypted export and sniffs the format', async () => {
+    const source = await seededStore()
+    const raw = await exportEncrypted(source.getPayload().servers, [], false, 'StrongExportPass1')
+    const dir = mkdtempSync(join(tmpdir(), 'sshvault-load-'))
+    dirs.push(dir)
+    const file = join(dir, 'my-export.sshvault')
+    writeFileSync(file, raw, 'utf8')
+    const loaded = loadImportFile(file)
+    expect(loaded.format).toBe('encrypted')
+    expect(loaded.fileName).toBe('my-export.sshvault')
+    expect(looksLikeEncryptedExport(loaded.raw)).toBe(true)
+  })
+
+  it('reads a CSV (any accepted extension) and sniffs csv', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sshvault-load-'))
+    dirs.push(dir)
+    const file = join(dir, 'servers.TXT')
+    writeFileSync(file, 'name,host,username,password\r\na,1.1.1.1,root,pw\r\n', 'utf8')
+    const loaded = loadImportFile(file)
+    expect(loaded.format).toBe('csv')
+    expect(loaded.fileName).toBe('servers.TXT')
+  })
+
+  it('rejects wrong extensions and unreadable files with invalid-input', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sshvault-load-'))
+    dirs.push(dir)
+    expect(() => loadImportFile(join(dir, 'photo.png'))).toThrow(/invalid-input/)
+    expect(() => loadImportFile(join(dir, 'no-extension'))).toThrow(/invalid-input/)
+    expect(() => loadImportFile(join(dir, 'missing.sshvault'))).toThrow(/invalid-input/)
   })
 })
 

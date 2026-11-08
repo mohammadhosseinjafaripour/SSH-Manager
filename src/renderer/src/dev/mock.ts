@@ -347,6 +347,12 @@ export function createMockBridge(): Bridge {
         }
         input.click()
       }),
+    vaultImportFile: async ({ path }) => {
+      // Browser dev build: fetch by fake path is not possible; reuse the mock
+      // pending import if the path matches the last picked file name.
+      if (!pendingMockImport) throw new Error('not-found')
+      return { ok: true, format: pendingMockImport.format, fileName: path.split(/[\\/]/).pop() ?? 'import' }
+    },
     vaultImportApply: async ({ exportPassword, mode }) => {
       if (!pendingMockImport) throw new Error('not-found')
       const { raw, format } = pendingMockImport
@@ -603,8 +609,8 @@ export function createMockBridge(): Bridge {
         status: (i === 1 ? 'auth-failed' : 'online') as 'online' | 'auth-failed',
         latencyMs: 18 + i * 27
       })),
-    resolveDroppedPaths: async ({ files }) =>
-      (files ?? []).map((f) => f.path).filter((p): p is string => typeof p === 'string'),
+    // Browser dev build has no webUtils; dropped files resolve to nothing.
+    pathForFile: () => '',
     onTransferProgress: () => () => undefined,
 
     onSessionPort: (cb) => {
