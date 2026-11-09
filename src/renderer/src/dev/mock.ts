@@ -314,6 +314,15 @@ export function createMockBridge(): Bridge {
     vaultActivity: async () => undefined,
     vaultBackups: async () => [] as VaultBackupInfo[],
     vaultRestoreBackup: async () => undefined,
+    // Browser dev build: Windows Hello doesn't exist outside the packaged app.
+    helloStatus: async () => ({ supported: false, enabled: false }),
+    helloEnable: async () => {
+      throw new Error('invalid-input:Windows Hello is only available in the desktop app')
+    },
+    helloDisable: async () => undefined,
+    helloUnlock: async () => {
+      throw new Error('invalid-input:Windows Hello is only available in the desktop app')
+    },
     vaultExportEncrypted: async ({ exportPassword, includePinnedHostKeys }) => {
       if (exportPassword.length < 10) throw new Error('invalid-input:export password must be at least 10 characters')
       const doc = JSON.stringify(

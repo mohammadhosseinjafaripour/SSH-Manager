@@ -2,48 +2,151 @@
   <img src="docs/screenshots/icon.png" width="96" alt="SSH Vault logo" />
 </p>
 
-# SSH Vault
+<h1 align="center">SSH Vault</h1>
 
-A secure, minimal SSH connection manager for Windows — PuTTY's job, without the dialogs.
+<p align="center">
+  <strong>A secure, minimal SSH connection manager — PuTTY's job, without the dialogs.</strong><br>
+  One master password unlocks an encrypted vault of servers; a click opens a real terminal;
+  auto-sudo lands you in a root shell without ever typing <code>sudo</code>.
+</p>
 
-One master password unlocks an encrypted vault of servers; a single click opens a real terminal
-tab; and with **auto-sudo** you land in a root shell without ever typing `sudo` or its password
-again.
+<p align="center">
+  <a href="https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases/latest"><img src="https://img.shields.io/github/v/release/mohammadhosseinjafaripour/SSH-Manager?label=release&color=2dd4bf&logo=github" alt="Release" /></a>
+  <a href="https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases"><img src="https://img.shields.io/github/downloads/mohammadhosseinjafaripour/SSH-Manager/total?label=downloads&color=blue&logo=github" alt="Downloads" /></a>
+  <a href="https://github.com/mohammadhosseinjafaripour/SSH-Manager/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/mohammadhosseinjafaripour/SSH-Manager/build.yml?branch=main&label=build&logo=githubactions" alt="Build" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/mohammadhosseinjafaripour/SSH-Manager?color=green" alt="License" /></a>
+  <img src="https://img.shields.io/badge/electron-45-47848F?logo=electron&logoColor=white" alt="Electron 45" />
+  <img src="https://img.shields.io/badge/node-22+-339933?logo=nodedotjs&logoColor=white" alt="Node 22+" />
+  <img src="https://img.shields.io/badge/tests-191%20passing-2dd4bf" alt="Tests" />
+</p>
 
 | Unlock | Servers |
 | :---: | :---: |
 | ![Unlock screen](docs/screenshots/unlock-screen.png) | ![Servers view](docs/screenshots/servers-view.png) |
 
+## Supported platforms
+
+| Platform | Install | Status |
+| --- | --- | --- |
+| **Windows** 10/11 (x64) | installer (NSIS) or portable `.exe` | ✅ fully supported — auto-update built in |
+| **Linux** (x64) | `.AppImage` / `.deb` / `.rpm` | ✅ v0.7.0 |
+| **macOS** (Intel & Apple Silicon) | `.dmg` | ✅ v0.7.0 (unsigned — see below) |
+
+Unsigned builds: Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper
+(System Settings → Privacy & Security → "Open Anyway") ask on first run. Code signing lands
+when the project can afford a certificate.
+
+## Highlights
+
+- 🔐 **Encrypted vault** — Argon2id (64 MiB) + AES-256-GCM; every server, password, key and
+  note sealed in one file with two rolling backups. Zero-knowledge: no master password, no data.
+- 🪟 **Split panes & broadcast input** — open two (or more) servers side by side in one tab and
+  toggle **Broadcast** to type into all of them at once — the fleet-admin power tool.
+- 👆 **Windows Hello unlock** — fingerprint / face / PIN instead of the master password
+  (the key is wrapped with DPAPI + a Hello-verified prompt). The password keeps working as fallback.
+- ⚡ **Auto-sudo** — land in a root shell automatically, with nonce-verified one-shot password
+  delivery that never leaks to the screen and never retries (see [how it stays safe](#auto-sudo-how-it-stays-safe)).
+- 🖥️ **Real terminal** — xterm.js: 256 color, copy-on-select, bracketed paste, in-terminal
+  search, reconnect with backoff, PuTTY-style right-click.
+- 🧠 **Ghost-text completions** — Copilot-style suggestions from your own history, a built-in
+  command catalog (~120 commands) and *real remote paths* over SFTP. 100% local, no AI, no network.
+- 📂 **SFTP file panel** — drag & drop folders, downloads, rename, chmod grid, conflict
+  policies, resizable columns — in its own connection so transfers never slow your shell.
+- 🔑 **Auth, all ways** — password, private key (PEM/OpenSSH, passphrase) or your system agent;
+  keyboard-interactive prompts and OTP/2FA dialogs supported.
+- 🛡️ **Host-key pinning (TOFU)** — approve a fingerprint before credentials ever travel;
+  a changed key hard-refuses with a side-by-side compare + typed-confirmation replacement.
+- 📦 **Migration** — encrypted `.sshvault` export (host keys ride along) or plaintext CSV;
+  drag a file straight onto the import dialog. One-way **PuTTY** & `~/.ssh/config` import too.
+- 🔄 **Self-updating** — checks GitHub Releases (a single anonymous HTTPS GET), downloads,
+  verifies sha512, and never restarts on its own while sessions are live.
+- 🌗 Dark / light / system themes; tray with live-session count; auto-lock on idle *and* on OS lock.
+
+<details>
+<summary><strong>All features in detail</strong></summary>
+
+- **Master-password vault** — Argon2id + AES-256-GCM encrypted file at
+  `%LOCALAPPDATA%\SSHVault\vault.bin` (Windows) or the platform's userData dir. Zero-knowledge:
+  a forgotten master password means the vault cannot be recovered (stated at setup).
+- **Servers, one click away** — named entries with host, port, username, tags and notes;
+  add/edit/delete (delete requires typing the server name); instant search (`Ctrl+Shift+F`).
+- **Tabbed terminals** — per-tab status (connecting / connected / **ROOT** / failed), and
+  **split**: the ⊞ button opens another server beside the current one in the same tab.
+- **Broadcast input** — with 2+ panes in a tab, the 📡 button (or `Ctrl+Shift+B`) mirrors every
+  keystroke and paste to all panes; each pane header shows a live **LIVE** badge while on.
+  Off by default; your focused pane always receives input regardless.
+- **Windows Hello** — enable in **Settings → Security**. The vault key is wrapped under a
+  random KEK; the KEK is DPAPI(CurrentUser)-protected and only released after a
+  UserConsentVerifier prompt (fingerprint/face/PIN). Delete the enrollment any time; the
+  master password path is untouched. Enrollment auto-invalidates when the vault is restored
+  or replaced.
+- **Auto-sudo elevation** — per server: `sudo -s`, `sudo -i`, `sudo su -` or a custom command;
+  the sudo password defaults to the login password (a separate one can be stored).
+- **Keyboard-interactive auth** — hidden `Password:` prompts are auto-answered; OTP/2FA
+  challenges appear in a dialog honoring each prompt's echo flag.
+- **Terminal search** — `Ctrl+Shift+F` walks the full scrollback with match-case/whole-word
+  toggles and a live match counter.
+- **Bulk health check** — **Check all** probes every server in parallel and shows a latency
+  pill per row, `auth failed`, `down`, or `key changed`.
+- **Inline suggestions** — `Tab` accepts, `→` accepts one path segment, `Esc` dismisses,
+  `↑/↓` cycles candidates. Toggle in **Settings → Connection**.
+
+  | You type | Ghost | Why |
+  | --- | --- | --- |
+  | `clea` | `r` | catalog command |
+  | `systemctl re` | `start` | subcommand |
+  | `cd lo` | `gs/` | remote directory (SFTP) |
+  | `tail -f /var/log/ngi` | `nx/error.log` | remote path |
+
+- **Sessions that survive being away** — SSH keepalives + `TMOUT=0`, then auto-reconnect with
+  exponential backoff (1s → 30s, forever) keeping all previous output; root is re-elevated.
+- **Upload conflict handling** — overwrite / keep both / skip, in the toolbar or on drop collision.
+- **Clipboard done properly** — `Ctrl+Shift+C/V`, `Ctrl+Insert`/`Shift+Insert`, right-click
+  copy-or-paste; plain `Ctrl+C` still sends SIGINT. Copied passwords auto-clear after 30s.
+- **Drag & drop everywhere** — folders/boards onto terminal or Files panel to upload; an
+  `.sshvault`/`.csv` onto the import dialog to import.
+
+</details>
+
 ## Getting started
 
-**Requirements:** Windows 10/11 x64, Node.js 22+ (to build from source).
+**Requirements:** Windows 10/11 x64 · any Linux (x64, glibc) · macOS 11+ (Intel/Apple Silicon).
+Node.js 22+ to build from source.
 
-Download a prebuilt release (`SSH Vault-x.x.x-setup.exe` installer or the portable exe) from
-[Releases](https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases), or build it
-yourself:
+Grab an installer from
+[**Releases**](https://github.com/mohammadhosseinjafaripour/SSH-Manager/releases/latest):
+
+| OS | File |
+| --- | --- |
+| Windows | `SSH-Vault-x.y.z-setup.exe` (installer) or `-portable.exe` (no install) |
+| Linux | `SSH-Vault-x.y.z-linux-x64.AppImage` / `.deb` / `.rpm` |
+| macOS | `SSH-Vault-x.y.z-mac-x64.dmg` (Intel) / `-mac-arm64.dmg` (Apple Silicon) |
+
+Or build it yourself:
 
 ```bash
 git clone https://github.com/mohammadhosseinjafaripour/SSH-Manager.git
 cd SSH-Manager
 npm install
-npm run dev        # development (Electron + hot reload)
-npm run verify     # typecheck + unit tests + lint + audit
-npm run package    # NSIS installer + portable exe (release/)
-npm run smoke      # launch the packaged app and prove it renders
+npm run dev          # development (Electron + hot reload)
+npm run verify       # typecheck + 191 unit tests + lint + audit
+npm run package      # Windows: NSIS installer + portable exe → release/
+npm run package:linux  # AppImage + deb + rpm
+npm run package:mac    # dmg (x64 + arm64)
+npm run smoke        # launch the packaged app and prove it renders
 ```
 
 There is also a browser-only development mode with a mock SSH backend — handy for working on
 the UI without touching real servers:
 
 ```bash
-npm run dev:ui     # serves the renderer at http://localhost:5188
+npm run dev:ui       # serves the renderer at http://localhost:5188
 ```
 
 ### If downloads stall
 
 On networks that throttle large HTTPS downloads from GitHub/CDNs, `electron-builder` can hang
-forever fetching the Electron runtime. A small static mirror works around it — stage the files
-with `curl`, serve them locally, and point the builder at that URL:
+forever fetching the Electron runtime. A small static mirror works around it:
 
 ```bash
 node scripts/local-mirror.mjs &     # serves .local-mirror/ on 127.0.0.1:8123
@@ -52,225 +155,76 @@ ELECTRON_BUILDER_BINARIES_MIRROR=http://127.0.0.1:8123/bins/ \
   npm run package
 ```
 
-The mirror root layout is `.local-mirror/mirror/electron/v<version>/electron-v<version>-win32-x64.zip`
-and `.local-mirror/bins/` for the NSIS/winCodeSign archives. `.local-mirror/` is git-ignored.
-
-
-## Features (MVP)
-
-- **Master-password vault** — Argon2id + AES-256-GCM encrypted file at
-  `%LOCALAPPDATA%\SSHVault\vault.bin`. Zero-knowledge: a forgotten master password means the
-  vault cannot be recovered (stated at setup).
-- **Servers, one click away** — named entries with host, port, username, tags and notes;
-  add/edit/delete (delete requires typing the server name); instant search (`Ctrl+Shift+F`).
-- **Tabbed terminals** — xterm.js with 256-color support, copy-on-select, right-click paste,
-  reconnect, per-tab status (connecting / connected / **ROOT** / failed).
-- **Auto-sudo elevation** — per server: `sudo -s`, `sudo -i`, `sudo su -` or a custom sudo
-  command; the sudo password defaults to the login password (a separate one can be stored).
-- **Host-key protection (TOFU)** — the SHA256 fingerprint is pinned on first connect and shown
-  for approval; any later change hard-refuses the connection and offers a side-by-side
-  comparison with a typed-confirmation replacement flow.
-- **Auto-lock** — after a configurable idle time the vault re-locks; running sessions stay
-  alive, reconnecting requires the master password. `Ctrl+Shift+L` locks immediately.
-- **Keyboard-interactive auth** — hidden `Password:` prompts are auto-answered; OTP/2FA
-  challenges appear in a dialog honoring each prompt's echo flag.
-- **SSH key authentication** — password, private key (PEM/OpenSSH, optional passphrase),
-  or your system SSH agent. Keys are pasted, loaded from a file, and stored encrypted in
-  the vault; they never leave the main process.
-- **Terminal search** — `Ctrl+Shift+F` (or the magnifier in the tab bar) searches the full
-  scrollback with match-case and whole-word toggles and a live match counter.
-- **Bulk health check** — **Check all** probes every server in parallel (8 at a time) and
-  shows a latency pill per row (`18ms`), `auth failed`, `down`, or `key changed`.
-- **Upload conflict handling** — choose *overwrite*, *keep both* (auto-renames), or *skip*,
-  both in the toolbar and in a prompt when a drop collides with existing files.
-- **Rename & chmod** — rename files and folders from the Files panel and edit permissions
-  with an owner/group/other checkbox grid (with the octal shown live).
-- **Inline command suggestions (ghost text)** — as you type, a dimmed completion appears
-  after the cursor, Copilot-style. **Tab** accepts it, **Right-arrow** accepts one path
-  segment, **Esc** dismisses. Suggestions come from three local sources, in order: your own
-  command history on that server, a built-in catalog of ~120 commands with their common
-  flags and subcommands (`git`, `docker`, `systemctl`, …), and real remote file paths listed
-  over SFTP. Typical completions:
-
-  | You type | Ghost | Why |
-  | --- | --- | --- |
-  | `clea` | `r` | catalog command |
-  | `ls -l` | `a` | flag of `ls` |
-  | `systemctl re` | `start` | subcommand |
-  | `cd lo` | `gs/` | remote directory (SFTP) |
-  | `tail -f /var/log/ngi` | `nx/error.log` | remote path |
-
-  **Several candidates?** When more than one match exists (e.g. `git ` or `ls -`), the first is
-  shown as the ghost with a `1/6` counter — press **↑/↓** to cycle through the alternatives,
-  then **Tab** to accept the highlighted one.
-
-  **It is entirely local — no AI, no API key, no network calls.** Nothing about your
-  commands, servers or files leaves the machine. The only remote request is an SFTP
-  directory listing when a path completion is needed, which goes to the server you are
-  already connected to. Toggle it in **Settings → Connection**.
-
-- **Sessions that survive being away** — SSH keepalives plus a `TMOUT` reset keep idle
-  sessions alive through NAT/firewall timeouts, and if a link really dies the session
-  **reconnects automatically** with exponential backoff (1s → 30s, forever) while keeping
-  the tab and all previous output on screen.
-- **File transfer (SFTP)** — the **Files** button next to your tabs opens a remote file
-  browser: drag & drop files *or whole folders* onto the panel (or the terminal), download
-  the other way, create folders, and delete. Transfers show live progress, run over their
-  own SSH connection so they never slow down your shell, and stay inside the same
-  host-key verification as the terminal. See [File transfer](#file-transfer-sftp).
-- **Clipboard done properly** — `Ctrl+Shift+C` copies the selection, `Ctrl+Shift+V` pastes
-  (with bracketed paste so multi-line commands don't fire line by line), `Ctrl+Insert` /
-  `Shift+Insert` also work, and right-click copies when there's a selection or pastes when
-  there isn't. Plain `Ctrl+C` still sends SIGINT to the remote shell.
-- Dark/light/system themes, durable vault writes with two backup generations.
-- **Batch import / export** — move every server to a new machine in two clicks
-  (see below).
-
 ## Moving to a new machine (import / export)
 
 Settings → **Move your servers**:
 
-- **Encrypted export** creates a `.sshvault` file containing all servers — passwords
-  included — sealed with Argon2id + AES-256-GCM under a password you choose for the
-  file. It is safe to carry on a USB stick or through cloud storage; without the
-  password it is indistinguishable from random bytes. Pinned host keys can ride
-  along too, so the new machine skips first-connect fingerprint prompts.
-- **Import file…** accepts that `.sshvault` file (it asks for the file's password)
-  or a plain CSV. Import runs in one of two modes:
-  - *Merge (recommended)* — adds everything new; servers that already exist
-    (same name + host + port + username) are skipped and reported.
-  - *Replace everything* — wipes the current servers and pins, then loads the
-    file (requires an explicit confirmation).
-- **Export as CSV** writes a plaintext spreadsheet (`name,host,port,username,password,
-  tags,notes,auto_sudo,sudo_command`; tags are `;`-separated inside their cell).
-  Useful for bulk-editing or moving to another tool — and deliberately gated
-  behind an "I understand the risk" checkbox, because the passwords are readable
-  by anyone who opens the file. The same CSV format can be imported back.
-
-Typical migration: on the old machine → *Encrypted export*; on the new machine →
-create a vault, *Import file…*, enter the export password, Merge. Done.
-
-## File transfer (SFTP)
-
-Open a session, then click **Files** in the tab bar. The panel starts in your home
-directory and gives you:
-
-- **Drag & drop** — drop files *or folders* onto the panel (or onto the terminal itself)
-  to upload them into the directory you're viewing. Recursive folder upload preserves the
-  tree.
-- **Upload** — native picker for files and folders.
-- **Download** — tick one or more entries and choose a local destination folder; folders
-  are downloaded recursively.
-- **New folder**, **rename**, **chmod** (permission grid), **delete** (recursive, with
-  confirmation), sorting by name/size/date, a mode column (`rw-r--r--`), and a path bar
-  you can type into.
-- **Readable listing** — the name column keeps a minimum width so long filenames never
-  collapse into an ellipsis; **Mode / Size / Modified** can each be shown, hidden and
-  resized. Drag a column edge in the header to resize it (double-click resets it), use the
-  column button at the right of the header to toggle columns, and drag the divider between
-  the terminal and the panel to make the whole panel wider. Both layouts are remembered.
-- **Conflict handling** — pick overwrite / keep both / skip in the toolbar, or answer a
-  prompt when a drop collides with files that already exist.
-
-Transfers stream in 32 KB chunks with 16-way concurrency and report live progress, so
-multi-GB uploads don't exhaust memory. A separate SSH connection is opened for SFTP, so a
-large transfer never competes with your interactive shell for window space. The host key
-is checked against the same pin as the terminal, and a **changed** key is refused.
+- **Encrypted export** creates a `.sshvault` file containing all servers — passwords included —
+  sealed with Argon2id + AES-256-GCM under a password you choose. Safe on a USB stick or cloud
+  drive; without the password it is indistinguishable from random bytes. Pinned host keys can
+  ride along so the new machine skips first-connect prompts.
+- **Import file…** accepts that `.sshvault` (asks for the file's password) or a plain CSV —
+  from the picker **or dropped straight onto the dialog**. Merge adds everything new and skips
+  duplicates (name+host+port+username); Replace wipes first and requires typed confirmation.
+- **Export as CSV** writes plaintext (`name,host,port,username,password,tags,notes,auto_sudo,
+  sudo_command`) behind an "I understand the risk" checkbox — readable by anyone who opens it.
 
 ## System tray
 
-Closing the window while sessions are connected does **not** exit the app — it hides to
-the system tray and your connections keep running. A balloon explains it the first time;
-the tray tooltip shows the live-session count.
+Closing the window while sessions are connected does **not** exit the app — it hides to the
+system tray and connections keep running (Windows). Click the tray icon to reopen; **Quit**
+ends every connection. Closing with nothing connected exits normally.
 
-- Click the tray icon (or **Show SSH Vault** in its menu) to reopen the window
-- **Quit (closes all sessions)** ends every connection and exits the app
-- Closing the window with **nothing** connected exits normally, as expected
 ## Updates
 
-SSH Vault updates itself from GitHub Releases — no links in chat, no manual
-re-downloads.
-
-- **Automatic checks** run shortly after launch and every six hours. They can be
-  turned off in **Settings → Updates**; when off, the app makes no request at all.
-- When a newer version exists it **downloads in the background** and the Settings
-  panel shows progress, then offers **Restart and install**.
-- Installing is **always your decision** — the app never quits on its own, because
-  that would kill live SSH sessions. `autoInstallOnQuit` is deliberately disabled.
-- **Check now** always works, even with automatic checks disabled, and there is a
-  **Release notes** button that opens the GitHub releases page.
-
-Privacy: a check is one HTTPS GET for a public `latest.yml` manifest. It sends
-nothing about you, your servers or your usage. The downloaded installer is
-verified against the `sha512` published in that manifest.
-
-The **portable** build cannot self-update (there is no installation to replace);
-it reports the new version and links to the release page.
-
-To publish a new version, see [docs/RELEASING.md](docs/RELEASING.md): bump the
-version, run `npm run package`, and attach the installer, `latest.yml` and the
-`.blockmap` to a tagged GitHub Release.
-
-## Staying connected
-
-Servers that drop you after a few idle minutes are handled in three layers:
-
-1. **SSH keepalives** every 15s, tolerating 20 missed replies (≈5 minutes) — keeps NAT and
-   firewall state alive, and survives short laptop sleeps or VPN blips.
-2. **`TMOUT=0`** is sent right after login, which defeats the common
-   `/etc/profile`-style idle logout and `bash`'s `TMOUT`.
-3. **Auto-reconnect** — if the connection still dies, the tab reconnects with backoff
-   (1s, 2s, 5s, 10s, 20s, then every 30s, indefinitely) and keeps all previous output. Root
-   elevation is re-established automatically.
-
-Both keepalives and auto-reconnect can be turned off in **Settings → Connection**. Sessions
-you close yourself never reconnect, and a rejected password is never retried (that would
-feed account-lockout counters).
+SSH Vault updates itself from GitHub Releases (Windows; other platforms download from the
+releases page). Automatic checks are one anonymous HTTPS GET for `latest.yml` — nothing about
+you is sent — and installing is always your decision: the app never restarts on its own while
+sessions are live. See [docs/RELEASING.md](docs/RELEASING.md) to publish a version.
 
 ## Keyboard shortcuts
 
-Inside the terminal app shortcuts use `Ctrl+Shift+*` so plain `Ctrl+L`, `Ctrl+W`, `Ctrl+N`
-always reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
+Inside the terminal, app shortcuts use `Ctrl+Shift+*` so plain `Ctrl+L`, `Ctrl+W`, `Ctrl+N`
+reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 
 | Action | Shortcut |
 | --- | --- |
 | Lock vault | `Ctrl+Shift+L` |
 | Close tab | `Ctrl+Shift+W` |
-| Search | `Ctrl+Shift+F` (plain `Ctrl+F` outside terminal) |
+| Search servers | `Ctrl+Shift+F` (plain `Ctrl+F` outside terminal) |
 | New server | `Ctrl+Shift+N` (plain `Ctrl+N` outside terminal) |
 | Cycle tabs | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Copy in terminal | select text (auto-copies), `Ctrl+Shift+C`, or `Ctrl+Insert` |
-| Paste in terminal | `Ctrl+Shift+V` or `Shift+Insert`; right-click pastes when nothing is selected |
-| Files panel | **Files** button in the tab bar |
-| Find in terminal | `Ctrl+Shift+F` or the magnifier in the tab bar |
-| Accept suggestion | `Tab` (whole) / `Right-arrow` (one segment) / `Esc` dismiss |
-| Cycle suggestions | `Up` / `Down` while a ghost is showing |
+| Split tab (open another server) | ⊞ button in the tab bar |
+| **Toggle broadcast** | `Ctrl+Shift+B` |
+| Copy in terminal | select text (auto-copies), `Ctrl+Shift+C`, `Ctrl+Insert` |
+| Paste in terminal | `Ctrl+Shift+V`, `Shift+Insert`, or right-click |
+| Accept suggestion | `Tab` (whole) / `→` (one segment) / `Esc` dismiss |
+| Cycle suggestions | `↑` / `↓` while a ghost is showing |
 
 ## Security design
 
 **Threat model — defended against**
 
-- *Vault theft at rest*: the vault file is useless without your master password
-  (Argon2id, 64 MiB / 3 passes / 4 lanes, 16-byte salt; AES-256-GCM with the header bound as
-  AAD — tampering or a wrong password both fail authentication).
-- *Casual shoulder-surfing*: lock screen hides all content; auto-lock after idle; passwords are
-  masked in the UI.
-- *Host-key MITM on first connect*: you see and approve the fingerprint before any credential
-  is sent — host verification happens **before** authentication, so passwords never travel to
-  an unverified host.
-- *Password exposure during sudo*: elevation sends the password only after detecting sudo's
-  unique per-attempt prompt marker, exactly once, with terminal echo disabled — it never
-  appears on screen, and is never sent on NOPASSWD servers (no prompt, no send, ever).
-  The sudo secret travels only inside the encrypted SSH channel.
-- *Malicious web content*: the renderer is sandboxed with `contextIsolation`, no Node access,
-  a strict CSP, no remote content, and a single-instance lock. Packaged builds flip Electron
-  fuses (no `runAsNode`, no inspect, ASAR-only with embedded integrity).
+- *Vault theft at rest*: useless without your master password (Argon2id, 64 MiB / 3 passes /
+  4 lanes; AES-256-GCM with the header bound as AAD — tampering and wrong password both fail
+  authentication, indistinguishably).
+- *Windows Hello enrollment*: the vault key is wrapped under a random 32-byte KEK; the KEK is
+  DPAPI(CurrentUser)-protected with app-specific entropy and only unwrapped **after** a
+  Windows-verified user-presence prompt. Nothing is stored in the cloud or the registry; the
+  enrollment is one local file (`vault.bin.hello`) you can delete.
+- *Casual shoulder-surfing*: lock screen hides all content; auto-lock after idle **and** on
+  OS lock/suspend; passwords masked; clipboard secrets auto-wiped after 30s.
+- *Host-key MITM on first connect*: fingerprint shown and approved **before** authentication —
+  passwords never travel to an unverified host.
+- *Password exposure during sudo*: the password is sent only after detecting sudo's unique
+  per-attempt marker, exactly once, with echo disabled — never on screen, never on NOPASSWD
+  servers, never retried (no `pam_faillock` feeding).
+- *Malicious web content*: sandboxed renderer, `contextIsolation`, strict CSP, no remote
+  content, single-instance lock, Electron fuses (no `runAsNode`, no inspect, ASAR-only with
+  embedded integrity).
 
-**Explicitly out of scope**: malware already running as your Windows user can read keystrokes
-and memory of any application, including this one. No local tool can defend against that.
-
-**Update policy**: no auto-update (supply-chain risk); check releases manually and verify the
-download. Production dependency audit: `npm audit --omit=dev` is clean at release.
+**Explicitly out of scope**: malware already running as your user can read keystrokes and
+memory of any application, including this one. No local tool can defend against that.
 
 ## Auto-sudo: how it stays safe
 
@@ -280,23 +234,20 @@ stty -echo; sudo -S -k -v -p '[SSHVAULT:<nonce>]' && stty echo && sudo -s; stty 
 
 Two phases, because `sudo -s` runs a shell *inside* sudo:
 
-1. `sudo -v` validates the password and caches a ticket (prompt → stderr → PTY).
+1. `sudo -v` validates the password and caches a ticket.
 2. On success, `stty echo` restores echo **in your own shell**, then the root shell starts
-   with the cached ticket — so echo is on for the whole session.
+   with the cached ticket — echo stays on for the whole session.
 
-- `-k` makes the prompt deterministic (kills cached sudo tickets)
-- the per-attempt `nonce` prevents false matches on banners/MOTD; the detector ignores the
-  marker when it appears quoted (the terminal's echo of the command itself)
-- the password is written **only** on an exact match of the bare marker — once, never on
-  timeout, never retried, never speculatively
+- `-k` makes the prompt deterministic; the per-attempt `nonce` prevents false matches, and the
+  detector ignores the marker when quoted (the terminal's own echo of the command)
+- the password is written **only** on an exact bare-marker match — once, never on timeout,
+  never retried, never speculatively
 - no timed writes anywhere: a timed `stty echo` could be eaten by sudo as a second password
-  attempt and lock the account on slow-auth servers
-- if sudo rejects the password and waits for another attempt, the app sends Ctrl+C and
-  restores echo, so the terminal is never left accepting invisible input
-- NOPASSWD servers (no prompt) and missing sudo are detected and reported — nothing is ever
-  written into the live shell
+  attempt and lock the account
+- rejection sends Ctrl+C and restores echo — the terminal is never left accepting invisible input
+- NOPASSWD servers and missing sudo are detected and reported — nothing is ever written
 
-This behavior is pinned by unit tests in `tests/elevate.test.ts`.
+Pinned by unit tests in `tests/elevate.test.ts`.
 
 ## Vault tools & backups
 
@@ -304,13 +255,16 @@ Every save writes: temp file → fsync → copy previous good file to `.bak` (ro
 → atomic replace. `Unlock → "Vault tools — restore a backup"` verifies a backup with your
 master password and restores it; the displaced file is kept as `vault.bin.corrupt-<ts>`.
 
-## Known limitations (MVP)
+## Roadmap
 
-- No code signing yet — Windows SmartScreen will warn on first run
-  ("More info → Run anyway").
-- Password authentication only; SSH keys/agent, SFTP and port forwarding are on the v2 list.
-- Automated E2E tests are not included; the security-critical modules (vault crypto, elevation
-  detector, host-key verifier, schemas) are covered by 43 unit tests.
+- [ ] Port forwarding / tunnels (`-L`, `-D` SOCKS)
+- [ ] Command snippets library (global + per server)
+- [ ] Change master password (re-encrypt in place)
+- [ ] TOTP secrets in the vault, auto-filled on 2FA prompts
+- [ ] Session logging to file
+- [ ] Export vault → `~/.ssh/config`
+- [ ] Code signing (Windows + macOS notarization)
+- [ ] Linux/macOS auto-update parity
 
 ## License
 

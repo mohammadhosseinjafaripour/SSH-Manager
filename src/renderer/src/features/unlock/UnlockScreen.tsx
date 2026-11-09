@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { AlertTriangle, KeyRound, ShieldCheck, TerminalSquare } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Fingerprint, KeyRound, ShieldCheck, TerminalSquare } from 'lucide-react'
 import { masterPasswordIssues } from '@shared/schemas'
 import { Button, Field, PasswordInput } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
@@ -43,6 +43,30 @@ function UnlockCard() {
   const [error, setError] = useState<string | null>(null)
   const [shake, setShake] = useState(false)
   const [showTools, setShowTools] = useState(false)
+  // Windows Hello: enrolled users get a one-tap unlock; the password field
+  // stays as the always-available fallback.
+  const [hello, setHello] = useState<{ supported: boolean; enabled: boolean } | null>(null)
+  const [helloBusy, setHelloBusy] = useState(false)
+
+  useEffect(() => {
+    void window.sshvault
+      .helloStatus()
+      .then(setHello)
+      .catch(() => setHello(null))
+  }, [])
+
+  const unlockWithHello = async () => {
+    if (helloBusy) return
+    setHelloBusy(true)
+    setError(null)
+    try {
+      await useVault.getState().unlockHello()
+    } catch (err) {
+      setError(friendlyError(err))
+    } finally {
+      setHelloBusy(false)
+    }
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -76,6 +100,24 @@ function UnlockCard() {
     >
       <Logo />
       <form onSubmit={submit} className="flex flex-col gap-4">
+        {hello?.enabled && hello.supported && (
+          <>
+            <Button
+              type="button"
+              onClick={() => void unlockWithHello()}
+              loading={helloBusy}
+              className="w-full"
+            >
+              <Fingerprint size={16} />
+              Unlock with Windows Hello
+            </Button>
+            <div className="flex items-center gap-3 py-1" aria-hidden="true">
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-[11px] uppercase tracking-wider text-faint">or</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          </>
+        )}
         <Field label="Master password" htmlFor="master-password">
           <PasswordInput
             value={password}

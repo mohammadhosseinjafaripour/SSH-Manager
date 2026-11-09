@@ -17,12 +17,35 @@ export const terminalWriters = new Map<string, (data: string) => void>()
  */
 const pendingOutput = new Map<string, string[]>()
 
-export interface SessionTab {
+export interface SessionPane {
   sessionId: string
   serverId: string
   name: string
   status: SessionStatus
   detail?: string
+}
+
+/**
+ * A tab holds one or more panes (split view). Each pane is a full session;
+ * the tab groups them side by side and carries the broadcast flag: with
+ * broadcast on, typing into any pane goes to every pane in the tab.
+ */
+export interface SessionTab {
+  id: string
+  panes: SessionPane[]
+  activePane: string
+  broadcast: boolean
+}
+
+function freshTab(server: ServerView, sessionId: string): SessionTab {
+  return {
+    id: crypto.randomUUID(),
+    panes: [
+      { sessionId, serverId: server.id, name: server.name, status: 'connecting' as const }
+    ],
+    activePane: sessionId,
+    broadcast: false
+  }
 }
 
 function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
@@ -46,11 +69,11 @@ function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
       useSessions.getState().pushNotice(sessionId)
       return
     case 'hostkey': {
-      const tab = useSessions.getState().tabs.find((t) => t.sessionId === sessionId)
-      const server = tab ? serverById(tab.serverId) : undefined
+      const pane = paneBySession(sessionId)
+      const server = pane ? serverById(pane.serverId) : undefined
       useUi.getState().openHostKey({
         sessionId,
-        serverId: tab?.serverId ?? '',
+        serverId: pane?.serverId ?? '',
         serverName: server?.name ?? 'this server',
         kind: msg.kind,
         fingerprint: msg.fingerprint,
@@ -62,6 +85,14 @@ function dispatchPortMessage(sessionId: string, msg: MainPortMessage): void {
       useUi.getState().openKi({ sessionId, name: msg.name, instruction: msg.instruction, prompts: msg.prompts })
       return
   }
+}
+
+function paneBySession(sessionId: string): SessionPane | undefined {
+  for (const t of useSessions.getState().tabs) {
+    const p = t.panes.find((x) => x.sessionId === sessionId)
+    if (p) return p
+  }
+  return undefined
 }
 
 /** Guards against wiring the same port twice (duplicate data delivery). */
@@ -78,10 +109,19 @@ interface SessionsState {
   active: string | 'servers'
   /** Which session's terminal has the search bar open (null = closed). */
   searchFor: string | null
+  /** Opens a server in a new tab with a single pane. */
   open: (server: ServerView) => Promise<void>
+  /** Splits the given tab: opens the server as an additional pane in it. */
+  split: (tabId: string, server: ServerView) => Promise<void>
+  /** Focuses a pane inside its tab (also activates the tab). */
+  focusPane: (tabId: string, sessionId: string) => void
   select: (which: string | 'servers') => void
   cycle: (direction: 1 | -1) => void
-  closeTab: (sessionId: string) => void
+  closeTab: (tabId: string) => void
+  closePane: (sessionId: string) => void
+  /** Reopens a pane's session in place, keeping its position in the tab. */
+  reconnectPane: (sessionId: string) => Promise<void>
+  toggleBroadcast: (tabId: string) => void
   setStatus: (sessionId: string, status: SessionStatus, detail?: string) => void
   pushNotice: (sessionId: string) => void
   /** Asks the given session's terminal pane to open its search bar. */
@@ -98,10 +138,8 @@ export const useSessions = create<SessionsState>((set, get) => ({
 
   open: async (server) => {
     const { sessionId } = await window.sshvault.sessionOpen(server.id)
-    set((s) => ({
-      tabs: [...s.tabs, { sessionId, serverId: server.id, name: server.name, status: 'connecting' }],
-      active: sessionId
-    }))
+    const tab = freshTab(server, sessionId)
+    set((s) => ({ tabs: [...s.tabs, tab], active: tab.id }))
     // The port may already have been delivered (onSessionPort wired it) or may
     // arrive later (registerPort wires it). Both paths converge here; only
     // wire once to avoid duplicate listeners.
@@ -109,41 +147,123 @@ export const useSessions = create<SessionsState>((set, get) => ({
     if (port && !wiredPorts.has(sessionId)) wirePort(sessionId, port)
   },
 
+  split: async (tabId, server) => {
+    const { sessionId } = await window.sshvault.sessionOpen(server.id)
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              panes: [
+                ...t.panes,
+                { sessionId, serverId: server.id, name: server.name, status: 'connecting' as const }
+              ],
+              activePane: sessionId
+            }
+          : t
+      ),
+      active: tabId
+    }))
+    const port = sessionPorts.get(sessionId)
+    if (port && !wiredPorts.has(sessionId)) wirePort(sessionId, port)
+  },
+
+  focusPane: (tabId, sessionId) =>
+    set((s) => ({
+      active: tabId,
+      tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, activePane: sessionId } : t))
+    })),
+
   select: (which) => set({ active: which }),
 
   cycle: (direction) => {
     const { tabs, active } = get()
     if (tabs.length === 0) return
-    const ids = ['servers', ...tabs.map((t) => t.sessionId)]
+    const ids = ['servers', ...tabs.map((t) => t.id)]
     const idx = ids.indexOf(active)
     const next = (idx + direction + ids.length) % ids.length
     set({ active: ids[next] })
   },
 
-  closeTab: (sessionId) => {
-    sessionPorts.get(sessionId)?.close()
-    sessionPorts.delete(sessionId)
-    terminalWriters.delete(sessionId)
-    wiredPorts.delete(sessionId)
-    void window.sshvault.sessionClose(sessionId).catch(() => undefined)
-    const ui = useUi.getState()
-    if (ui.hostkey?.sessionId === sessionId) ui.closeHostKey()
-    if (ui.ki?.sessionId === sessionId) ui.closeKi()
+  closeTab: (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    for (const pane of tab.panes) teardownPane(pane.sessionId)
     set((s) => {
-      const tabs = s.tabs.filter((t) => t.sessionId !== sessionId)
+      const idx = s.tabs.findIndex((t) => t.id === tabId)
+      const tabs = s.tabs.filter((t) => t.id !== tabId)
       const active =
-        s.active === sessionId
-          ? (tabs[tabs.findIndex((t) => t.sessionId === sessionId) - 1]?.sessionId ??
-            tabs[tabs.length - 1]?.sessionId ??
-            'servers')
+        s.active === tabId
+          ? (tabs[Math.max(0, idx - 1)]?.id ?? tabs[tabs.length - 1]?.id ?? 'servers')
           : s.active
       return { tabs, active }
     })
   },
 
+  closePane: (sessionId) => {
+    teardownPane(sessionId)
+    set((s) => {
+      const tab = s.tabs.find((t) => t.panes.some((p) => p.sessionId === sessionId))
+      if (!tab) return {}
+      const panes = tab.panes.filter((p) => p.sessionId !== sessionId)
+      if (panes.length === 0) {
+        const idx = s.tabs.findIndex((t) => t.id === tab.id)
+        const tabs = s.tabs.filter((t) => t.id !== tab.id)
+        const active =
+          s.active === tab.id
+            ? (tabs[Math.max(0, idx - 1)]?.id ?? tabs[tabs.length - 1]?.id ?? 'servers')
+            : s.active
+        return { tabs, active }
+      }
+      return {
+        tabs: s.tabs.map((t) =>
+          t.id === tab.id
+            ? { ...t, panes, activePane: t.activePane === sessionId ? panes[0].sessionId : t.activePane }
+            : t
+        )
+      }
+    })
+  },
+
+  reconnectPane: async (sessionId) => {
+    const state = get()
+    const tab = state.tabs.find((t) => t.panes.some((p) => p.sessionId === sessionId))
+    const pane = tab?.panes.find((p) => p.sessionId === sessionId)
+    const server = pane ? serverById(pane.serverId) : undefined
+    if (!tab || !server) return
+    teardownPane(sessionId)
+    const { sessionId: fresh } = await window.sshvault.sessionOpen(server.id)
+    // Same tab, same position — only the session underneath is replaced.
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tab.id
+          ? {
+              ...t,
+              panes: t.panes.map((p) =>
+                p.sessionId === sessionId
+                  ? { sessionId: fresh, serverId: server.id, name: server.name, status: 'connecting' as const }
+                  : p
+              ),
+              activePane: t.activePane === sessionId ? fresh : t.activePane
+            }
+          : t
+      )
+    }))
+    const port = sessionPorts.get(fresh)
+    if (port && !wiredPorts.has(fresh)) wirePort(fresh, port)
+  },
+
+  toggleBroadcast: (tabId) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, broadcast: !t.broadcast } : t))
+    })),
+
   setStatus: (sessionId, status, detail) => {
     set((s) => ({
-      tabs: s.tabs.map((t) => (t.sessionId === sessionId ? { ...t, status, detail } : t))
+      tabs: s.tabs.map((t) => ({
+        ...t,
+        panes: t.panes.map((p) => (p.sessionId === sessionId ? { ...p, status, detail } : p))
+      }))
     }))
     if (status === 'closed' || status === 'error' || status === 'auth-failed') {
       const ui = useUi.getState()
@@ -169,15 +289,23 @@ export const useSessions = create<SessionsState>((set, get) => ({
   },
 
   reconnect: async (sessionId) => {
-    const tab = get().tabs.find((t) => t.sessionId === sessionId)
-    const server = tab ? serverById(tab.serverId) : undefined
-    if (!server) return
-    get().closeTab(sessionId)
-    await get().open(server)
+    await get().reconnectPane(sessionId)
   }
 }))
 
-/** Terminal data pump without React re-renders. */
+/** Drops every renderer-side handle for a pane's session. */
+function teardownPane(sessionId: string): void {
+  sessionPorts.get(sessionId)?.close()
+  sessionPorts.delete(sessionId)
+  terminalWriters.delete(sessionId)
+  wiredPorts.delete(sessionId)
+  const ui = useUi.getState()
+  if (ui.hostkey?.sessionId === sessionId) ui.closeHostKey()
+  if (ui.ki?.sessionId === sessionId) ui.closeKi()
+  void window.sshvault.sessionClose(sessionId).catch(() => undefined)
+}
+
+/** Terminal data pump without React re-renderers. */
 export function registerTerminalWriter(sessionId: string, write: (data: string) => void): void {
   terminalWriters.set(sessionId, write)
   // Flush anything that arrived while the terminal was mounting.

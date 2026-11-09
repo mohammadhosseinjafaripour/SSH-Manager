@@ -11,7 +11,14 @@ const { existsSync } = require('node:fs')
 const { join } = require('node:path')
 const http = require('node:http')
 
-const EXE = join(__dirname, '..', 'release', 'win-unpacked', 'SSH Vault.exe')
+// Packaged exe location differs per platform (win-unpacked / linux-unpacked /
+// the .app bundle on macOS).
+const EXE =
+  process.platform === 'win32'
+    ? join(__dirname, '..', 'release', 'win-unpacked', 'SSH Vault.exe')
+    : process.platform === 'darwin'
+      ? join(__dirname, '..', 'release', 'mac', 'SSH Vault.app', 'Contents', 'MacOS', 'SSH Vault')
+      : join(__dirname, '..', 'release', 'linux-unpacked', 'ssh-vault')
 const PORT = 9333
 const WAIT_MS = 25_000
 

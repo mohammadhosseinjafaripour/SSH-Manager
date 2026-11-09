@@ -28,6 +28,10 @@ const api: Bridge = {
   vaultBackups: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultBackups),
   vaultRestoreBackup: (file, masterPassword) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.vaultRestoreBackup, { file, password: masterPassword }),
+  helloStatus: () => ipcRenderer.invoke(BRIDGE_CHANNELS.helloStatus),
+  helloEnable: () => ipcRenderer.invoke(BRIDGE_CHANNELS.helloEnable),
+  helloDisable: () => ipcRenderer.invoke(BRIDGE_CHANNELS.helloDisable),
+  helloUnlock: () => ipcRenderer.invoke(BRIDGE_CHANNELS.helloUnlock),
   vaultExportEncrypted: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportEncrypted, input),
   vaultExportCsv: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultExportCsv),
   vaultImportPick: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultImportPick),

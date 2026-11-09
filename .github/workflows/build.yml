@@ -1,0 +1,38 @@
+name: Build
+
+# Builds all platforms on every push to main and every tag. Release artifacts
+# are attached by the maintainer (npm run package + gh release create) so the
+# release notes stay hand-written; this workflow exists to catch build breaks
+# on Linux/macOS, which the Windows-only dev machine can't test.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run lint
+      # Full electron-builder package on each OS: catches missing platform
+      # config, bad icons, native module build failures (@node-rs/argon2 ships
+      # prebuilds; ssh2 is pure JS) — the two things CI for an Electron app
+      # actually protects.
+      - run: npx electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke (startup)
+        if: matrix.os == 'windows-latest'
+        run: npm run smoke

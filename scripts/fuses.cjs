@@ -14,17 +14,22 @@ const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
  *    creates a webgl context (verified: no canvas/webgl usage in src/).
  *  - vk_swiftshader* : software Vulkan ICD, a GPU-less fallback for the above.
  *
+ * Windows-only names — Linux/mac builds don't ship these files at all, so the
+ * list is skipped there rather than stat'd pointlessly.
+ *
  * Deliberately NOT removed: ffmpeg.dll (Chromium may reference it), icudtl.dat
  * (text/unicode data we do use), resources.pak (Chromium assets), or any
  * licence file (legal requirement).
  */
-const REMOVABLE_RUNTIME_FILES = [
-  'dxcompiler.dll',
-  'd3dcompiler_47.dll',
-  'vk_swiftshader.dll',
-  'vk_swiftshader_icd.json',
-  'vulkan-1.dll'
-]
+const REMOVABLE_RUNTIME_FILES = process.platform === 'win32'
+  ? [
+      'dxcompiler.dll',
+      'd3dcompiler_47.dll',
+      'vk_swiftshader.dll',
+      'vk_swiftshader_icd.json',
+      'vulkan-1.dll'
+    ]
+  : []
 
 function stripUnusedRuntime(appOutDir) {
   let saved = 0
@@ -43,8 +48,11 @@ function stripUnusedRuntime(appOutDir) {
 
 module.exports = async function afterPack(context) {
   const productFilename = context.packager.appInfo.productFilename
-  const ext = process.platform === 'win32' ? '.exe' : ''
-  const executablePath = join(context.appOutDir, productFilename + ext)
+  const ext = process.platform === 'win32' ? '.exe' : process.platform === 'darwin' ? '.app' : ''
+  const executablePath =
+    process.platform === 'darwin'
+      ? join(context.appOutDir, productFilename + ext, 'Contents', 'MacOS', productFilename)
+      : join(context.appOutDir, productFilename + ext)
 
   // Trim runtime blobs before fuses are flipped (fuses touch the exe only).
   const saved = stripUnusedRuntime(context.appOutDir)

@@ -50,4 +50,49 @@ nsis:
   artifactName: SSH-Vault-${version}-setup.${ext}
 portable:
   artifactName: SSH-Vault-${version}-portable.${ext}
+# Linux: AppImage is the most compatible "just run it" format; the deb/rpm
+# packages cover the distro stores. No auto-update for AppImage on Linux
+# (electron-updater supports it, but AppImage users typically update via
+# package manager or re-download) — checks still report new versions.
+linux:
+  category: Utility
+  # icon.png is picked up from buildResources automatically (512px present).
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  desktop:
+    entry:
+      Name: SSH Vault
+      Comment: Secure, minimal SSH connection manager with an encrypted local vault
+      Categories: Network;Utility;System;
+appImage:
+  artifactName: SSH-Vault-${version}-linux-x64.${ext}
+deb:
+  artifactName: SSH-Vault-${version}-linux-x64.${ext}
+rpm:
+  artifactName: SSH-Vault-${version}-linux-x64.${ext}
+# macOS: unsigned (no certificate yet) — same situation as Windows until the
+# project buys signing. dmg for Intel and Apple Silicon both: arm64 runs under
+# Rosetta-free native build; x64 covers older Macs.
+mac:
+  category: public.app-category.utilities
+  # Unsigned builds trip Gatekeeper; users clear it via System Settings →
+  # Privacy & Security → "Open Anyway". identity: null skips signing cleanly.
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  electronLanguages:
+    - en-US
+dmg:
+  artifactName: SSH-Vault-${version}-mac-${arch}.${ext}
 afterPack: ./scripts/fuses.cjs

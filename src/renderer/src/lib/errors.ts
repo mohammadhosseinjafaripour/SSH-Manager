@@ -24,6 +24,10 @@ export function friendlyError(err: unknown): string {
       return 'The vault is locked. Unlock it and try again.'
     case 'not-found':
       return 'This server no longer exists in the vault.'
+    case 'hello-cancelled':
+      return 'Windows Hello was dismissed — the vault stays locked.'
+    case 'hello-unavailable':
+      return 'Windows Hello is not set up — add a PIN or fingerprint in Windows Settings first.'
     case 'invalid-input':
       return detail || 'Please check the entered values.'
     case 'vault-exists':

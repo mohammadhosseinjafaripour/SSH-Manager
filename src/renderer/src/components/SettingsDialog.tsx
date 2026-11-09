@@ -4,6 +4,7 @@ import {
   ArrowUpFromLine,
   Download,
   FileSpreadsheet,
+  Fingerprint,
   Moon,
   RefreshCw,
   Settings2,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { Theme, UpdateState } from '@shared/types'
 import { Button, Dialog, Field, Input, Switch } from './ui'
+import { friendlyError } from '../lib/errors'
 import { applyTheme } from '../lib/theme'
 import { useUi } from '../stores/ui'
 import { useVault } from '../stores/vault'
@@ -61,7 +63,9 @@ const SETTING_DESCRIPTIONS: Record<string, string> = {
   'Inline command suggestions':
     'Ghost-text completions from your history, common commands and remote paths (Tab accepts). Runs entirely on this machine.',
   'Auto-reconnect':
-    'Reconnect automatically when a session drops, keeping its output'
+    'Reconnect automatically when a session drops, keeping its output',
+  'Unlock with Windows Hello':
+    'Fingerprint or PIN instead of the master password. The master password always keeps working as a fallback.'
 }
 const THEME_OPTIONS = [
   { value: 'dark', label: 'Dark' },
@@ -75,11 +79,35 @@ export function SettingsDialog() {
   const settings = useVault((s) => s.settings)
   const [update, setUpdate] = useState<UpdateState | null>(null)
   const [checking, setChecking] = useState(false)
+  const [hello, setHello] = useState<{ supported: boolean; enabled: boolean } | null>(null)
+  const [helloBusy, setHelloBusy] = useState(false)
+  const [helloError, setHelloError] = useState<string | null>(null)
 
   useEffect(() => {
-    void window.sshvault.updateState().then(setUpdate)
-    return window.sshvault.onUpdateState(setUpdate)
-  }, [])
+    if (!settingsOpen) return
+    void window.sshvault
+      .helloStatus()
+      .then((st) => {
+        setHello(st)
+        setHelloError(null)
+      })
+      .catch(() => setHello(null))
+  }, [settingsOpen])
+
+  const toggleHello = async (on: boolean) => {
+    if (helloBusy) return
+    setHelloBusy(true)
+    setHelloError(null)
+    try {
+      if (on) await window.sshvault.helloEnable()
+      else await window.sshvault.helloDisable()
+      setHello(await window.sshvault.helloStatus())
+    } catch (err) {
+      setHelloError(friendlyError(err))
+    } finally {
+      setHelloBusy(false)
+    }
+  }
 
   const checkNow = async () => {
     setChecking(true)
@@ -148,6 +176,26 @@ export function SettingsDialog() {
             onBlur={(e) => void saveIdle(e.target.value)}
           />
         </Field>
+
+        {hello?.supported && (
+          <div className="flex flex-col gap-3 border-t border-line pt-4">
+            <p className="flex items-center gap-1.5 text-[13px] font-medium text-fg">
+              <Fingerprint size={14} className="text-accent" />
+              Security
+            </p>
+            <ToggleRow
+              label="Unlock with Windows Hello"
+              checked={hello.enabled}
+              onToggle={(v) => void toggleHello(v)}
+            />
+            {helloBusy && <p className="text-[12px] text-muted">Waiting for Windows Hello…</p>}
+            {helloError && (
+              <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[12.5px] text-danger">
+                {helloError}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 border-t border-line pt-4">
           <p className="text-[13px] font-medium text-fg">Connection</p>

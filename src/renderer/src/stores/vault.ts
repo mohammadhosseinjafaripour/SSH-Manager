@@ -10,6 +10,8 @@ interface VaultState {
   init: () => Promise<void>
   create: (masterPassword: string) => Promise<void>
   unlock: (masterPassword: string) => Promise<void>
+  /** Unlock via the Windows Hello prompt (enrollment must exist). */
+  unlockHello: () => Promise<void>
   applyLocked: () => void
   setServers: (servers: ServerView[]) => void
   upsert: (input: ServerUpsertInput) => Promise<string>
@@ -42,6 +44,11 @@ export const useVault = create<VaultState>((set) => ({
 
   unlock: async (masterPassword) => {
     const state = await window.sshvault.vaultUnlock(masterPassword)
+    set({ phase: 'unlocked', settings: state.settings, servers: state.servers })
+  },
+
+  unlockHello: async () => {
+    const state = await window.sshvault.helloUnlock()
     set({ phase: 'unlocked', settings: state.settings, servers: state.servers })
   },
 

@@ -70,11 +70,13 @@ export function ServersView() {
    * the session you were using.
    */
   const connect = (server: ServerView) => {
-    const existing = tabs.find(
-      (t) => t.serverId === server.id && !['closed', 'error'].includes(t.status)
+    const existing = tabs.find((t) =>
+      t.panes.some(
+        (p) => p.serverId === server.id && !['closed', 'error'].includes(p.status)
+      )
     )
     if (existing) {
-      select(existing.sessionId)
+      select(existing.id)
       return
     }
     void open(server).catch(() => undefined)
@@ -147,7 +149,8 @@ export function ServersView() {
         ) : (
           <ul id="server-list" className="flex flex-col gap-1.5" role="listbox" aria-label="Servers">
             {filtered.map((server) => {
-              const liveTabs = tabs.filter((t) => t.serverId === server.id && !['closed', 'error'].includes(t.status))
+              const liveTabs = tabs.filter((t) =>
+                t.panes.some((p) => p.serverId === server.id && !['closed', 'error'].includes(p.status)))
               return (
                 <li key={server.id}>
                   <div

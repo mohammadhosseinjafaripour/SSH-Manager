@@ -17,6 +17,13 @@ import {
   VaultLockedError
 } from './vault/store'
 import {
+  enableHelloUnlock,
+  disableHelloUnlock,
+  helloConsentAvailable,
+  helloEnabled,
+  unwrapHelloKey
+} from './vault/hello'
+import {
   applyImport,
   exportEncrypted,
   loadImportFile,
@@ -151,6 +158,37 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
   handle('vaultRestoreBackup', (input: { file: string; password: string }) =>
     store.restoreBackup(input.file, input.password)
   )
+
+  // ---- Windows Hello unlock -------------------------------------------------
+
+  handle('helloStatus', () => ({
+    supported: helloConsentAvailable(),
+    enabled: store.exists() && helloEnabled(store.dir)
+  }))
+
+  handle('helloEnable', () => {
+    const key = store.liveKey
+    if (!key) throw new VaultLockedError()
+    if (!helloConsentAvailable()) {
+      throw new Error(
+        'invalid-input:Windows Hello is not set up — add a PIN or fingerprint in Windows Settings first'
+      )
+    }
+    return enableHelloUnlock(store.dir, key).finally(() => key.fill(0))
+  })
+
+  handle('helloDisable', () => disableHelloUnlock(store.dir))
+
+  handle('helloUnlock', async () => {
+    if (!store.exists() || store.isUnlocked()) throw new UnlockFailedError()
+    const key = await unwrapHelloKey(store.dir)
+    try {
+      const payload = await store.unlockWithKey(key)
+      return { settings: payload.settings, servers: payload.servers.map(toView) }
+    } finally {
+      key.fill(0)
+    }
+  })
 
   // ---- SFTP -----------------------------------------------------------------
 

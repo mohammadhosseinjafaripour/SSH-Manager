@@ -25,6 +25,7 @@ import {
   parseVaultFile,
   sealPayload
 } from './crypto'
+import { disableHelloUnlock } from './hello'
 
 export const VAULT_FILE = 'vault.bin'
 const BAK_SUFFIXES = ['.bak', '.bak2'] as const
@@ -89,18 +90,29 @@ function mergeDefaults(payload: VaultPayload): VaultPayload {
  */
 export class VaultStore {
   private readonly filePath: string
+  private readonly dirPath: string
   private header: VaultHeader | null = null
   private key: Buffer | null = null
   private payload: VaultPayload | null = null
   private saveChain: Promise<void> = Promise.resolve()
   private lastActivityAt = Date.now()
 
-  constructor(private readonly dir: string) {
+  constructor(dir: string) {
+    this.dirPath = dir
     this.filePath = join(dir, VAULT_FILE)
   }
 
   get path(): string {
     return this.filePath
+  }
+
+  get dir(): string {
+    return this.dirPath
+  }
+
+  /** The live vault key, or null while locked. Used to enroll Windows Hello. */
+  get liveKey(): Buffer | null {
+    return this.key ? Buffer.from(this.key) : null
   }
 
   exists(): boolean {
@@ -133,6 +145,9 @@ export class VaultStore {
   async create(masterPassword: string): Promise<void> {
     if (this.exists()) throw new VaultExistsError()
     mkdirSync(this.dir, { recursive: true })
+    // A new vault means a new key — any Windows Hello enrollment for the old
+    // one must not survive.
+    disableHelloUnlock(this.dirPath)
     const header = newHeader(DEFAULT_KDF)
     const salt = Buffer.from(header.kdf.saltB64, 'base64')
     const key = await deriveKey(masterPassword, salt, header.kdf)
@@ -148,6 +163,23 @@ export class VaultStore {
     const doc = parseVaultFile(readFileSync(this.filePath, 'utf8'))
     const salt = Buffer.from(doc.header.kdf.saltB64, 'base64')
     const key = await deriveKey(masterPassword, salt, doc.header.kdf)
+    return this.adoptUnlockedKey(doc, key)
+  }
+
+  /**
+   * Unlock with a key recovered by other means (Windows Hello unwrap). The
+   * caller owns zeroing the key buffer it passes — the store keeps its own.
+   */
+  async unlockWithKey(key: Buffer): Promise<VaultPayload> {
+    if (!this.exists()) throw new UnlockFailedError()
+    const doc = parseVaultFile(readFileSync(this.filePath, 'utf8'))
+    return this.adoptUnlockedKey(doc, key)
+  }
+
+  private async adoptUnlockedKey(
+    doc: ReturnType<typeof parseVaultFile>,
+    key: Buffer
+  ): Promise<VaultPayload> {
     let payload: VaultPayload
     try {
       payload = JSON.parse(openPayload(key, doc.header, doc.sealed))
@@ -156,7 +188,7 @@ export class VaultStore {
       throw err
     }
     this.header = doc.header
-    this.key = key
+    this.key = Buffer.from(key)
     this.payload = mergeDefaults(payload)
     this.touchActivity()
     return this.payload
@@ -384,6 +416,9 @@ export class VaultStore {
       key.fill(0)
     }
     this.lock()
+    // The restored vault was sealed under a different key; Hello enrollment
+    // for the displaced vault can no longer unwrap anything.
+    disableHelloUnlock(this.dirPath)
     if (existsSync(this.filePath)) {
       renameSync(this.filePath, `${this.filePath}.corrupt-${Date.now()}`)
     }

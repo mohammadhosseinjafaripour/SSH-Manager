@@ -315,6 +315,14 @@ export interface Bridge {
   vaultActivity(): Promise<void>
   vaultBackups(): Promise<VaultBackupInfo[]>
   vaultRestoreBackup(file: string, masterPassword: string): Promise<void>
+  /** Whether Windows Hello unlock is possible (OS + Hello configured + enrolled). */
+  helloStatus(): Promise<{ supported: boolean; enabled: boolean }>
+  /** Enrolls the current vault key for Hello unlock (vault must be unlocked). */
+  helloEnable(): Promise<void>
+  /** Drops the Hello enrollment; master password unlock is unaffected. */
+  helloDisable(): Promise<void>
+  /** Unlock via the Hello prompt; resolves like vaultUnlock. */
+  helloUnlock(): Promise<{ settings: VaultSettings; servers: ServerView[] }>
   vaultExportEncrypted(input: {
     exportPassword: string
     includePinnedHostKeys: boolean
@@ -472,6 +480,10 @@ export const BRIDGE_CHANNELS = {
   vaultActivity: 'vault:activity',
   vaultBackups: 'vault:backups',
   vaultRestoreBackup: 'vault:restore-backup',
+  helloStatus: 'hello:status',
+  helloEnable: 'hello:enable',
+  helloDisable: 'hello:disable',
+  helloUnlock: 'hello:unlock',
   vaultExportEncrypted: 'vault:export-encrypted',
   vaultExportCsv: 'vault:export-csv',
   vaultImportPick: 'vault:import-pick',
