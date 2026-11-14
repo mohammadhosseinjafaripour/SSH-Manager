@@ -313,6 +313,8 @@ export interface Bridge {
   ): Promise<{ settings: VaultSettings; servers: ServerView[] }>
   vaultLock(): Promise<void>
   vaultActivity(): Promise<void>
+  /** Verifies the current master password, then re-encrypts the vault under the new one. */
+  vaultChangePassword(input: { currentPassword: string; nextPassword: string }): Promise<void>
   vaultBackups(): Promise<VaultBackupInfo[]>
   vaultRestoreBackup(file: string, masterPassword: string): Promise<void>
   /** Whether Windows Hello unlock is possible (OS + Hello configured + enrolled). */
@@ -478,6 +480,7 @@ export const BRIDGE_CHANNELS = {
   vaultUnlock: 'vault:unlock',
   vaultLock: 'vault:lock',
   vaultActivity: 'vault:activity',
+  vaultChangePassword: 'vault:change-password',
   vaultBackups: 'vault:backups',
   vaultRestoreBackup: 'vault:restore-backup',
   helloStatus: 'hello:status',

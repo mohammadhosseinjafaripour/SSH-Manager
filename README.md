@@ -17,7 +17,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/mohammadhosseinjafaripour/SSH-Manager?color=green" alt="License" /></a>
   <img src="https://img.shields.io/badge/electron-45-47848F?logo=electron&logoColor=white" alt="Electron 45" />
   <img src="https://img.shields.io/badge/node-22+-339933?logo=nodedotjs&logoColor=white" alt="Node 22+" />
-  <img src="https://img.shields.io/badge/tests-191%20passing-2dd4bf" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-197%20passing-2dd4bf" alt="Tests" />
 </p>
 
 | Unlock | Servers |
@@ -40,6 +40,8 @@ when the project can afford a certificate.
 
 - 🔐 **Encrypted vault** — Argon2id (64 MiB) + AES-256-GCM; every server, password, key and
   note sealed in one file with two rolling backups. Zero-knowledge: no master password, no data.
+  **Change the master password** any time (Settings → Security): it asks for the current one as
+  proof, then re-encrypts under the new password with a fresh salt.
 - 🪟 **Split panes & broadcast input** — open two (or more) servers side by side in one tab and
   toggle **Broadcast** to type into all of them at once — the fleet-admin power tool.
 - 👆 **Windows Hello unlock** — fingerprint / face / PIN instead of the master password
@@ -129,7 +131,7 @@ git clone https://github.com/mohammadhosseinjafaripour/SSH-Manager.git
 cd SSH-Manager
 npm install
 npm run dev          # development (Electron + hot reload)
-npm run verify       # typecheck + 191 unit tests + lint + audit
+npm run verify       # typecheck + 197 unit tests + lint + audit
 npm run package      # Windows: NSIS installer + portable exe → release/
 npm run package:linux  # AppImage + deb + rpm
 npm run package:mac    # dmg (x64 + arm64)
@@ -208,6 +210,9 @@ reach your remote shell. Outside the terminal plain `Ctrl+*` also works.
 - *Vault theft at rest*: useless without your master password (Argon2id, 64 MiB / 3 passes /
   4 lanes; AES-256-GCM with the header bound as AAD — tampering and wrong password both fail
   authentication, indistinguishably).
+- *Master-password rotation*: changing the password verifies the current one first, then
+  re-derives the key under a **fresh salt** and re-seals the whole payload in one durable write —
+  the old password stops working immediately, and a failed write rolls back to the old key.
 - *Windows Hello enrollment*: the vault key is wrapped under a random 32-byte KEK; the KEK is
   DPAPI(CurrentUser)-protected with app-specific entropy and only unwrapped **after** a
   Windows-verified user-presence prompt. Nothing is stored in the cloud or the registry; the
@@ -259,7 +264,7 @@ master password and restores it; the displaced file is kept as `vault.bin.corrup
 
 - [ ] Port forwarding / tunnels (`-L`, `-D` SOCKS)
 - [ ] Command snippets library (global + per server)
-- [ ] Change master password (re-encrypt in place)
+- [x] Change master password (re-encrypt in place)
 - [ ] TOTP secrets in the vault, auto-filled on 2FA prompts
 - [ ] Session logging to file
 - [ ] Export vault → `~/.ssh/config`

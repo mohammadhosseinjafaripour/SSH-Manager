@@ -12,6 +12,7 @@ import { TerminalView } from './features/terminal/TerminalView'
 import { HostKeyDialog } from './components/HostKeyDialog'
 import { KiDialog } from './components/KiDialog'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { TransferDialog } from './components/TransferDialog'
 import { Button, Spinner } from './components/ui'
 
@@ -261,6 +262,13 @@ function MainLayout() {
   )
 }
 
+/** Renders the change-password dialog from ui-store state (opened from Settings). */
+function ChangePasswordDialogHost() {
+  const open = useUi((s) => s.changePasswordOpen)
+  const setOpen = useUi((s) => s.setChangePasswordOpen)
+  return <ChangePasswordDialog open={open} onOpenChange={setOpen} />
+}
+
 export default function App() {
   const phase = useVault((s) => s.phase)
   useGlobalEffects()
@@ -285,6 +293,7 @@ export default function App() {
       <HostKeyDialog />
       <KiDialog />
       <SettingsDialog />
+      <ChangePasswordDialogHost />
       <TransferDialog />
     </>
   )

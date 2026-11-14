@@ -36,6 +36,7 @@ interface UiState {
   deleteTarget: ServerView | null
   settingsOpen: boolean
   vaultToolsOpen: boolean
+  changePasswordOpen: boolean
   transfer: TransferState | null
   hostkey: HostKeyDialogState | null
   ki: KiDialogState | null
@@ -49,6 +50,7 @@ interface UiState {
   closeDelete: () => void
   setSettingsOpen: (open: boolean) => void
   setVaultToolsOpen: (open: boolean) => void
+  setChangePasswordOpen: (open: boolean) => void
   openTransfer: (mode: TransferState['mode']) => void
   closeTransfer: () => void
   openHostKey: (state: HostKeyDialogState) => void
@@ -65,6 +67,7 @@ export const useUi = create<UiState>((set) => ({
   deleteTarget: null,
   settingsOpen: false,
   vaultToolsOpen: false,
+  changePasswordOpen: false,
   transfer: null,
   hostkey: null,
   ki: null,
@@ -78,6 +81,7 @@ export const useUi = create<UiState>((set) => ({
   closeDelete: () => set({ deleteTarget: null }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setVaultToolsOpen: (vaultToolsOpen) => set({ vaultToolsOpen }),
+  setChangePasswordOpen: (changePasswordOpen) => set({ changePasswordOpen }),
   openTransfer: (mode) => set({ transfer: { mode } }),
   closeTransfer: () => set({ transfer: null }),
   openHostKey: (hostkey) => set({ hostkey }),

@@ -311,6 +311,11 @@ export function createMockBridge(): Bridge {
       return snapshot()
     },
     vaultLock: async () => undefined,
+    vaultChangePassword: async ({ currentPassword, nextPassword }) => {
+      if (!state.created || currentPassword !== state.masterPassword) throw new Error("unlock-failed")
+      if (nextPassword.length < 10) throw new Error("invalid-input:the new password must be at least 10 characters")
+      state.masterPassword = nextPassword
+    },
     vaultActivity: async () => undefined,
     vaultBackups: async () => [] as VaultBackupInfo[],
     vaultRestoreBackup: async () => undefined,

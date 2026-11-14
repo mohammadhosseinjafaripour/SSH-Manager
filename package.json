@@ -1,7 +1,7 @@
 {
   "name": "ssh-vault",
   "productName": "SSH Vault",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Secure, minimal SSH connection manager with an encrypted local vault and automatic sudo elevation",
   "private": true,
   "type": "module",

@@ -151,6 +151,17 @@ export function registerIpc(store: VaultStore, manager: ConnectionManager): void
     store.lock()
   })
 
+  handle('vaultChangePassword', (input: { currentPassword: string; nextPassword: string }) => {
+    if (
+      !input ||
+      typeof input.currentPassword !== 'string' ||
+      typeof input.nextPassword !== 'string'
+    ) {
+      throw new Error('invalid-input:missing passwords')
+    }
+    return store.changeMasterPassword(input.currentPassword, input.nextPassword)
+  })
+
   handle('vaultActivity', () => store.touchActivity())
 
   handle('vaultBackups', () => store.listBackups())

@@ -205,6 +205,53 @@ export class VaultStore {
     return result
   }
 
+  /**
+   * Change the master password. Verifies the current password first (the
+   * "are you really you" gate), then re-derives the key under a fresh header
+   * (new salt) and re-seals the payload in one durable write. The Windows
+   * Hello enrollment wraps the *old* key, so it is dropped — the user can
+   * re-enable it in one click afterwards.
+   */
+  async changeMasterPassword(currentPassword: string, nextPassword: string): Promise<void> {
+    if (!this.payload || !this.key || !this.header) throw new VaultLockedError()
+    if (nextPassword.length < 10) {
+      throw new Error('invalid-input:the new password must be at least 10 characters')
+    }
+    // Verify against the live key material: wrong current password → reject
+    // before touching anything on disk.
+    const salt = Buffer.from(this.header.kdf.saltB64, 'base64')
+    const candidate = await deriveKey(currentPassword, salt, this.header.kdf)
+    const matches = candidate.equals(this.key)
+    candidate.fill(0)
+    if (!matches) throw new UnlockFailedError()
+
+    // Fresh salt means the new key shares nothing with the old one, even for
+    // the same password.
+    const header = newHeader(DEFAULT_KDF)
+    const newSalt = Buffer.from(header.kdf.saltB64, 'base64')
+    const newKey = await deriveKey(nextPassword, newSalt, header.kdf)
+    const oldKey = this.key
+    const oldHeader = this.header
+    try {
+      this.header = header
+      this.key = newKey
+      // scheduleSave serializes with any other pending write; writeDurable
+      // seals under the (new) live key.
+      await this.scheduleSave()
+      // Success — any Hello enrollment wrapped the old key; drop it. The user
+      // re-enables it with one click (a fresh wrap under the new key).
+      disableHelloUnlock(this.dirPath)
+      oldKey.fill(0)
+    } catch (err) {
+      // The durable write failed: revert to the old key/header so the vault
+      // on disk (still sealed under the old key) stays consistent with memory.
+      this.header = oldHeader
+      this.key = oldKey
+      newKey.fill(0)
+      throw err
+    }
+  }
+
   // ---- server domain operations -------------------------------------------
 
   async upsertServer(input: ServerUpsertInput): Promise<ServerEntry> {

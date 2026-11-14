@@ -5,6 +5,7 @@ import {
   Download,
   FileSpreadsheet,
   Fingerprint,
+  KeyRound,
   Moon,
   RefreshCw,
   Settings2,
@@ -76,6 +77,7 @@ const THEME_OPTIONS = [
 export function SettingsDialog() {
   const settingsOpen = useUi((s) => s.settingsOpen)
   const setSettingsOpen = useUi((s) => s.setSettingsOpen)
+  const setChangePasswordOpen = useUi((s) => s.setChangePasswordOpen)
   const settings = useVault((s) => s.settings)
   const [update, setUpdate] = useState<UpdateState | null>(null)
   const [checking, setChecking] = useState(false)
@@ -177,25 +179,39 @@ export function SettingsDialog() {
           />
         </Field>
 
-        {hello?.supported && (
-          <div className="flex flex-col gap-3 border-t border-line pt-4">
-            <p className="flex items-center gap-1.5 text-[13px] font-medium text-fg">
-              <Fingerprint size={14} className="text-accent" />
-              Security
-            </p>
-            <ToggleRow
-              label="Unlock with Windows Hello"
-              checked={hello.enabled}
-              onToggle={(v) => void toggleHello(v)}
-            />
-            {helloBusy && <p className="text-[12px] text-muted">Waiting for Windows Hello…</p>}
-            {helloError && (
-              <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[12.5px] text-danger">
-                {helloError}
-              </p>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col gap-3 border-t border-line pt-4">
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-fg">
+            <Fingerprint size={14} className="text-accent" />
+            Security
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setSettingsOpen(false)
+              setChangePasswordOpen(true)
+            }}
+            className="w-fit"
+          >
+            <KeyRound size={13} />
+            Change master password
+          </Button>
+          {hello?.supported && (
+            <>
+              <ToggleRow
+                label="Unlock with Windows Hello"
+                checked={hello.enabled}
+                onToggle={(v) => void toggleHello(v)}
+              />
+              {helloBusy && <p className="text-[12px] text-muted">Waiting for Windows Hello…</p>}
+              {helloError && (
+                <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[12.5px] text-danger">
+                  {helloError}
+                </p>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="flex flex-col gap-3 border-t border-line pt-4">
           <p className="text-[13px] font-medium text-fg">Connection</p>

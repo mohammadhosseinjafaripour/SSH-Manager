@@ -25,6 +25,7 @@ const api: Bridge = {
   vaultUnlock: (masterPassword) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultUnlock, masterPassword),
   vaultLock: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultLock),
   vaultActivity: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultActivity),
+  vaultChangePassword: (input) => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultChangePassword, input),
   vaultBackups: () => ipcRenderer.invoke(BRIDGE_CHANNELS.vaultBackups),
   vaultRestoreBackup: (file, masterPassword) =>
     ipcRenderer.invoke(BRIDGE_CHANNELS.vaultRestoreBackup, { file, password: masterPassword }),
