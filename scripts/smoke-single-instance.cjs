@@ -28,6 +28,7 @@
 const { spawn } = require('node:child_process')
 const { existsSync } = require('node:fs')
 const { join } = require('node:path')
+const { tmpdir } = require('node:os')
 const http = require('node:http')
 
 const EXE = join(__dirname, '..', 'release', 'win-unpacked', 'SSH Vault.exe')
@@ -151,9 +152,7 @@ function closeWindowViaCdp(wsUrl) {
 }
 
 ;(async () => {
-  const first = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
-    stdio: ['ignore', 'pipe', 'pipe']
-  })
+  const first = spawn(EXE, [`--remote-debugging-port=${PORT}`], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LOCALAPPDATA: join(tmpdir(), 'sshvault-smoke-single') } })
   let stderr = ''
   first.stderr.on('data', (d) => (stderr += d.toString()))
 
@@ -187,7 +186,7 @@ function closeWindowViaCdp(wsUrl) {
   const windowGone = !afterClose.some((t) => t.type === 'page')
 
   // Second launch: the "open from the shortcut while in the tray" path.
-  const second = spawn(EXE, [], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const second = spawn(EXE, [], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LOCALAPPDATA: join(tmpdir(), 'sshvault-smoke-single') } })
   const secondCode = await waitForExit(second, SECOND_EXIT_MS)
   if (secondCode === 'timeout') {
     try {

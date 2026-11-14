@@ -9,6 +9,7 @@
 const { spawn } = require('node:child_process')
 const { existsSync } = require('node:fs')
 const { join } = require('node:path')
+const { tmpdir } = require('node:os')
 const http = require('node:http')
 
 // Packaged exe location differs per platform (win-unpacked / linux-unpacked /
@@ -51,8 +52,18 @@ function fetchTargets() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 ;(async () => {
+  // A separate profile: the app is single-instance per userData dir, so a
+  // copy that happens to be running (or installed) would make this build exit
+  // immediately and fail the smoke test for the wrong reason.
   const child = spawn(EXE, [`--remote-debugging-port=${PORT}`], {
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      // main/index.ts derives the vault dir from LOCALAPPDATA; isolate the
+      // smoke run so a real install holding the single-instance lock can't
+      // make this build exit immediately (false FAIL).
+      LOCALAPPDATA: join(tmpdir(), 'sshvault-smoke-profile')
+    }
   })
 
   let stderr = ''
