@@ -3,7 +3,7 @@
 //  - nodeCliInspect off: no --inspect debugger injection
 //  - OnlyLoadAppFromAsar + embedded ASAR integrity: code can't be swapped
 const { join } = require('node:path')
-const { rmSync, statSync } = require('node:fs')
+const { readdirSync, rmSync, statSync } = require('node:fs')
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 
 /**
@@ -46,13 +46,61 @@ function stripUnusedRuntime(appOutDir) {
   return saved
 }
 
-module.exports = async function afterPack(context) {
+/**
+ * Locates the packed Electron binary from what electron-builder actually
+ * wrote, instead of rebuilding the name from productFilename.
+ *
+ * The name differs per platform: Windows uses `SSH Vault.exe`, macOS the
+ * `SSH Vault.app` bundle, but Linux derives it from the package `name`
+ * (`ssh-vault`). Assuming productFilename everywhere made the Linux package
+ * fail with ENOENT trying to open ".../linux-unpacked/SSH Vault".
+ */
+function findExecutable(context) {
+  const { appOutDir } = context
   const productFilename = context.packager.appInfo.productFilename
-  const ext = process.platform === 'win32' ? '.exe' : process.platform === 'darwin' ? '.app' : ''
-  const executablePath =
+  const candidates = (
     process.platform === 'darwin'
-      ? join(context.appOutDir, productFilename + ext, 'Contents', 'MacOS', productFilename)
-      : join(context.appOutDir, productFilename + ext)
+      ? [
+          join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename),
+          join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', context.packager.appInfo.sanitizedName)
+        ]
+      : process.platform === 'win32'
+        ? [join(appOutDir, `${productFilename}.exe`)]
+        : [
+            context.packager.executableName
+              ? join(appOutDir, context.packager.executableName)
+              : null,
+            join(appOutDir, context.packager.appInfo.sanitizedName),
+            join(appOutDir, productFilename)
+          ]
+  ).filter(Boolean)
+
+  for (const candidate of candidates) {
+    // Never treat the output directory itself as the binary: `join(dir, '')`
+    // collapses to dir and would pass an existsSync check.
+    if (candidate === appOutDir) continue
+    try {
+      if (statSync(candidate).isFile()) return candidate
+    } catch {
+      /* not this one */
+    }
+  }
+  // Last resort: the only top-level executable file in the bundle.
+  const fallback = readdirSync(appOutDir).find((f) => {
+    try {
+      const st = statSync(join(appOutDir, f))
+      if (!st.isFile()) return false
+      return process.platform === 'win32' ? f.endsWith('.exe') : (st.mode & 0o111) !== 0
+    } catch {
+      return false
+    }
+  })
+  if (fallback) return join(appOutDir, fallback)
+  throw new Error(`afterPack: could not locate the packaged executable in ${appOutDir}`)
+}
+
+module.exports = async function afterPack(context) {
+  const executablePath = findExecutable(context)
 
   // Trim runtime blobs before fuses are flipped (fuses touch the exe only).
   const saved = stripUnusedRuntime(context.appOutDir)

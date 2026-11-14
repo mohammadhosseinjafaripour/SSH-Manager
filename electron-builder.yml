@@ -56,6 +56,9 @@ portable:
 # package manager or re-download) — checks still report new versions.
 linux:
   category: Utility
+  # Explicit: the packaged binary and .desktop Exec are then deterministic
+  # rather than derived from package name, and afterPack can find it.
+  executableName: ssh-vault
   # icon.png is picked up from buildResources automatically (512px present).
   target:
     - target: AppImage
