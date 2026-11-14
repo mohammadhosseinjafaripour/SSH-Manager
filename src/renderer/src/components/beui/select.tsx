@@ -499,11 +499,15 @@ export function SelectItem({
   const activeId = useContext(ActiveOptionContext);
   const selected = ctx.value === value;
   const label = typeof children === "string" ? children : value;
+  // `ctx` is a new object whenever the menu opens/closes; only these two
+  // members are stable. Destructuring names what the effects really depend
+  // on — exhaustive-deps can't see through `ctx.someMember` in a dep array.
+  const { register, unregister } = ctx;
 
   useLayoutEffect(() => {
-    ctx.register(value, label, disabled);
-  }, [ctx.register, value, label, disabled]);
-  useLayoutEffect(() => () => ctx.unregister(value), [ctx.unregister, value]);
+    register(value, label, disabled);
+  }, [register, value, label, disabled]);
+  useLayoutEffect(() => () => unregister(value), [unregister, value]);
 
   return (
     <motion.div variants={ctx.reduce ? undefined : ITEM_VARIANTS}>

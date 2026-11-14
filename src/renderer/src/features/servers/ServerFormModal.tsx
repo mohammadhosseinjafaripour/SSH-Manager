@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useForm, type Resolver, type UseFormReturn } from 'react-hook-form'
+import { useState } from 'react'
+import { useForm, useWatch, type Resolver, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowUpRight, ShieldCheck, Zap } from 'lucide-react'
 import { looksLikePrivateKey, privateKeyKind, serverFormSchema, type ServerFormValues } from '@shared/schemas'
@@ -53,10 +53,22 @@ function toFormValues(server: ServerView | null): ServerFormValues {
   }
 }
 
+/**
+ * Keyed by the target so opening the form for a different server (or for
+ * add) mounts a fresh instance with the right initial state. That replaces
+ * the old sync-everything-in-an-effect pattern, which forced a cascading
+ * re-render on every open.
+ */
 export function ServerFormModal() {
+  const { serverFormOpen, editing } = useUi()
+  const targetKey = serverFormOpen ? (editing?.id ?? 'new') : 'closed'
+  return <ServerFormBody key={targetKey} />
+}
+
+function ServerFormBody() {
   const { serverFormOpen, editing, closeServerForm } = useUi()
   const upsert = useVault((s) => s.upsert)
-  const [tagsText, setTagsText] = useState('')
+  const [tagsText, setTagsText] = useState(() => editing?.tags.join(', ') ?? '')
   const [error, setError] = useState<string | null>(null)
   const [test, setTest] = useState<TestConnectionResult | null>(null)
   const [testing, setTesting] = useState(false)
@@ -66,17 +78,9 @@ export function ServerFormModal() {
     defaultValues: toFormValues(editing)
   })
 
-  useEffect(() => {
-    if (serverFormOpen) {
-      form.reset(toFormValues(editing))
-      setTagsText(editing?.tags.join(', ') ?? '')
-      setError(null)
-      setTest(null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverFormOpen, editing])
-
-  const watched = form.watch()
+  // useWatch is the supported subscription API; form.watch() called during
+  // render makes the React Compiler skip this component entirely.
+  const watched = useWatch({ control: form.control })
   const elevateEnabled = watched.elevate?.enabled
   const preset = watched.elevate?.preset
   const passwordMode = watched.elevate?.passwordMode
@@ -229,7 +233,7 @@ export function ServerFormModal() {
               </Button>
             </div>
             <textarea
-              value={form.watch('privateKey') ?? ''}
+              value={watched.privateKey ?? ''}
               onChange={(e) => form.setValue('privateKey', e.target.value)}
               placeholder={
                 editing?.hasKey
@@ -244,7 +248,10 @@ export function ServerFormModal() {
               <p className="text-[12px] text-danger">{form.formState.errors.privateKey.message}</p>
             )}
             {(() => {
-              const key = form.watch('privateKey') ?? ''
+              // `watched` already subscribes to the whole form above; calling
+              // form.watch() again here would add a second subscription and
+              // makes the React Compiler skip this component.
+              const key = watched.privateKey ?? ''
               if (!key) return null
               const kind = privateKeyKind(key)
               return (
@@ -255,7 +262,7 @@ export function ServerFormModal() {
             })()}
             <Field label="Key passphrase (if any)">
               <PasswordInput
-                value={form.watch('keyPassphrase') ?? ''}
+                value={watched.keyPassphrase ?? ''}
                 onChange={(v) => form.setValue('keyPassphrase', v)}
                 placeholder="Only if your key is encrypted"
               />
@@ -351,7 +358,7 @@ export function ServerFormModal() {
                   hint={editing ? 'Leave empty to keep the stored sudo password' : undefined}
                 >
                   <PasswordInput
-                    value={form.watch('elevate.customPassword') ?? ''}
+                    value={watched.elevate?.customPassword ?? ''}
                     onChange={(v) => form.setValue('elevate.customPassword', v)}
                   />
                 </Field>

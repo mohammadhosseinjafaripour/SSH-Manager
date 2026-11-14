@@ -1,18 +1,31 @@
 name: Build
 
-# Builds all platforms on every push to main and every tag. Release artifacts
-# are attached by the maintainer (npm run package + gh release create) so the
-# release notes stay hand-written; this workflow exists to catch build breaks
-# on Linux/macOS, which the Windows-only dev machine can't test.
+# Verifies the codebase on every OS and proves the packaging config is valid.
+#
+# Split into two jobs on purpose:
+#  - verify: cheap, fast, every OS, run in parallel, and one OS failing must
+#    NOT cancel the others (fail-fast: false) — otherwise a macOS-only problem
+#    hides the Linux result, and the log ends with "The operation was
+#    canceled", which says nothing about the actual failure.
+#  - package: one OS only (ubuntu). Building full installers on all three is
+#    slow and needs platform tooling (wine for NSIS, etc.); it catches nothing
+#    that the Windows dev machine doesn't already exercise. `--dir` still
+#    packs the asar so icon/config/afterPack mistakes surface here.
 on:
   push:
     branches: [main]
     tags: ['v*']
   pull_request:
 
+# A newer push to the same branch makes older runs pointless.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -25,14 +38,37 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
+      # Warnings are warnings: this step fails only on errors, which is what
+      # `eslint` exits non-zero for. Use --max-warnings 0 locally to be strict.
       - run: npm run lint
-      # Full electron-builder package on each OS: catches missing platform
-      # config, bad icons, native module build failures (@node-rs/argon2 ships
-      # prebuilds; ssh2 is pure JS) — the two things CI for an Electron app
-      # actually protects.
-      - run: npx electron-builder --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Smoke (startup)
+      - run: npm run build
+      # The smoke scripts boot the *packaged* app, so Windows needs an unpacked
+      # build first (fast: no installer compression).
+      - name: Package (unpacked, Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win --dir --publish never
+      - name: Smoke (startup, Windows)
         if: matrix.os == 'windows-latest'
         run: npm run smoke
+      - name: Smoke (single instance, Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run smoke:instance
+
+  package:
+    # Packaging needs a built app; nothing here is OS-specific enough to
+    # justify three full installer builds on every push.
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # --dir = unpacked build: validates electron-builder.yml, the icon set,
+      # asar contents and the afterPack fuses hook without NSIS/dmg tooling.
+      - run: npx electron-builder --dir --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
