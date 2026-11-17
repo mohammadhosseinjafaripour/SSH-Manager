@@ -218,6 +218,10 @@ body {
 .xterm .xterm-viewport {
   background-color: var(--term-bg) !important;
 }
-.xterm-screen {
+/* Inset the terminal content via the .xterm root, never via .xterm-screen:
+   the selection layer and mouse hit-testing are anchored to .xterm-screen's
+   box, so padding there desyncs the highlight from the text. Padding on the
+   root is what FitAddon subtracts when computing cols/rows. */
+.xterm {
   padding: 8px 0 8px 8px;
 }
