@@ -34,7 +34,7 @@ const defaultState: MockState = {
   created: false,
   masterPassword: '',
   servers: seedServers(),
-  settings: { idleLockMinutes: 10, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true, autoUpdate: true, terminalFontSize: 13 },
+  settings: { idleLockMinutes: 10, lockOnOsLock: true, theme: 'dark', keepAlive: true, autoReconnect: true, autocomplete: true, autoUpdate: true, terminalFontSize: 13 },
   pinned: {}
 }
 

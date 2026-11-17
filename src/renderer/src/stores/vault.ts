@@ -23,6 +23,7 @@ export const useVault = create<VaultState>((set) => ({
   phase: 'loading',
   settings: {
     idleLockMinutes: 10,
+    lockOnOsLock: true,
     theme: 'dark',
     keepAlive: true,
     autoReconnect: true,

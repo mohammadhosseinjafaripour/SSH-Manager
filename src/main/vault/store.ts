@@ -61,6 +61,7 @@ function defaultPayload(): VaultPayload {
     hostKeyHistory: [],
     settings: {
       idleLockMinutes: 10,
+      lockOnOsLock: true,
       theme: 'dark',
       keepAlive: true,
       autoReconnect: true,
@@ -371,6 +372,7 @@ export class VaultStore {
         const mins = Math.min(240, Math.max(1, Math.round(patch.idleLockMinutes)))
         p.settings.idleLockMinutes = mins
       }
+      if (patch.lockOnOsLock !== undefined) p.settings.lockOnOsLock = !!patch.lockOnOsLock
       if (patch.theme !== undefined) p.settings.theme = patch.theme
       if (patch.keepAlive !== undefined) p.settings.keepAlive = !!patch.keepAlive
       if (patch.autoReconnect !== undefined) p.settings.autoReconnect = !!patch.autoReconnect

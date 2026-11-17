@@ -125,6 +125,9 @@ export interface HostKeyHistoryEntry {
 
 export interface VaultSettings {
   idleLockMinutes: number
+  /** Re-lock instantly when the OS locks the session or the machine suspends.
+   * Independent of idleLockMinutes: this path ignores idle time entirely. */
+  lockOnOsLock: boolean
   theme: Theme
   /** Send SSH keepalives so NAT/firewalls don't silently drop idle sessions. */
   keepAlive: boolean

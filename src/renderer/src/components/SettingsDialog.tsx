@@ -57,6 +57,8 @@ function ToggleRow({
 }
 
 const SETTING_DESCRIPTIONS: Record<string, string> = {
+  'Lock when Windows locks or suspends':
+    'Instant re-lock on Win+L, sleep or screen-off — independent of the idle minutes above. Turn off to rely on the idle timer alone.',
   'Keep sessions alive':
     'Sends keepalives so idle sessions survive NAT and firewall timeouts',
   'Check for updates automatically':
@@ -184,6 +186,11 @@ export function SettingsDialog() {
             <Fingerprint size={14} className="text-accent" />
             Security
           </p>
+          <ToggleRow
+            label="Lock when Windows locks or suspends"
+            checked={settings.lockOnOsLock !== false}
+            onToggle={(v) => void updateSettings({ lockOnOsLock: v })}
+          />
           <Button
             variant="secondary"
             size="sm"

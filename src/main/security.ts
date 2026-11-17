@@ -46,9 +46,19 @@ export async function clearClipboardOnQuit(): Promise<void> {
   }
 }
 
-/** Re-locks the vault whenever the OS session locks or the machine suspends. */
+/**
+ * Re-locks the vault whenever the OS session locks or the machine suspends.
+ * Honors the `lockOnOsLock` setting (default on): users who prefer only the
+ * idle timer can opt out. A locked vault has nothing to lock and no readable
+ * settings — both cases simply return.
+ */
 export function registerOsLock(store: VaultStore, notify: () => void): void {
   const lockNow = () => {
+    try {
+      if (store.getPayload().settings.lockOnOsLock === false) return
+    } catch {
+      return // vault already locked — nothing to re-lock
+    }
     try {
       store.lock()
     } catch {

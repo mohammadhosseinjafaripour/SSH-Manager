@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { VaultStore, UnlockFailedError } from '../src/main/vault/store'
 import { VAULT_FILE } from '../src/main/vault/store'
+import { deriveKey, newHeader, sealPayload } from '../src/main/vault/crypto'
 
 const dirs: string[] = []
 
@@ -20,6 +21,48 @@ afterAll(() => {
 const PW = 'correct horse battery staple'
 
 describe('VaultStore', () => {
+  it('lockOnOsLock defaults on, is toggleable, and survives relock/unlock', async () => {
+    const { store } = freshStore()
+    await store.create(PW)
+    // default: on
+    expect(store.getPayload().settings.lockOnOsLock).toBe(true)
+
+    await store.updateSettings({ lockOnOsLock: false })
+    expect(store.getPayload().settings.lockOnOsLock).toBe(false)
+    store.lock()
+    const payload = await store.unlock(PW)
+    expect(payload.settings.lockOnOsLock).toBe(false)
+  })
+
+  it('legacy vault without lockOnOsLock gets the on default merged in', async () => {
+    const { store, dir } = freshStore()
+    // A vault written by an older version: no lockOnOsLock key in settings.
+    const header = newHeader()
+    const salt = Buffer.from(header.kdf.saltB64, 'base64')
+    const key = await deriveKey(PW, salt, header.kdf)
+    const legacy = {
+      servers: [],
+      pinnedHostKeys: [],
+      hostKeyHistory: [],
+      settings: {
+        idleLockMinutes: 30,
+        theme: 'dark',
+        keepAlive: true,
+        autoReconnect: true,
+        autocomplete: true,
+        autoUpdate: true,
+        terminalFontSize: 13
+      }
+    }
+    writeFileSync(
+      join(dir, VAULT_FILE),
+      JSON.stringify({ header, sealed: sealPayload(key, header, JSON.stringify(legacy)) })
+    )
+    const payload = await store.unlock(PW)
+    expect(payload.settings.lockOnOsLock).toBe(true)
+    expect(payload.settings.idleLockMinutes).toBe(30)
+  })
+
   it('create → unlock round-trips the payload', async () => {
     const { store } = freshStore()
     await store.create(PW)
