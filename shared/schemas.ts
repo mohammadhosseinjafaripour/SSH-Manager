@@ -78,6 +78,14 @@ export function normalizeTags(raw: ReadonlyArray<string>): string[] {
 
 export const MASTER_PASSWORD_MIN = 10
 
+/**
+ * Absolute minimum accepted anywhere (master password, change-password and
+ * export-file password). The strength rules above are advisory: a user may
+ * consciously opt out of them via the weak-password acknowledgement, but
+ * never below this floor.
+ */
+export const MASTER_PASSWORD_FLOOR = 4
+
 export function masterPasswordIssues(pw: string): string[] {
   const issues: string[] = []
   if (pw.length < MASTER_PASSWORD_MIN) issues.push(`At least ${MASTER_PASSWORD_MIN} characters`)

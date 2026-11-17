@@ -6,6 +6,7 @@
  * Simulates: vault create/unlock, server CRUD, a first-connect host-key
  * dialog, an echo shell with prompt, and the sudo marker/echo-off dance.
  */
+import { MASTER_PASSWORD_FLOOR } from '@shared/schemas'
 import { randomUUID } from './uuid'
 import type {
   Bridge,
@@ -313,7 +314,7 @@ export function createMockBridge(): Bridge {
     vaultLock: async () => undefined,
     vaultChangePassword: async ({ currentPassword, nextPassword }) => {
       if (!state.created || currentPassword !== state.masterPassword) throw new Error("unlock-failed")
-      if (nextPassword.length < 10) throw new Error("invalid-input:the new password must be at least 10 characters")
+      if (nextPassword.length < MASTER_PASSWORD_FLOOR) throw new Error(`invalid-input:the new password must be at least ${MASTER_PASSWORD_FLOOR} characters`)
       state.masterPassword = nextPassword
     },
     vaultActivity: async () => undefined,
@@ -329,7 +330,7 @@ export function createMockBridge(): Bridge {
       throw new Error('invalid-input:Windows Hello is only available in the desktop app')
     },
     vaultExportEncrypted: async ({ exportPassword, includePinnedHostKeys }) => {
-      if (exportPassword.length < 10) throw new Error('invalid-input:export password must be at least 10 characters')
+      if (exportPassword.length < MASTER_PASSWORD_FLOOR) throw new Error(`invalid-input:export password must be at least ${MASTER_PASSWORD_FLOOR} characters`)
       const doc = JSON.stringify(
         { app: 'ssh-vault-export', format: 1, exportedAt: new Date().toISOString(), exportPassword, includePinnedHostKeys, servers: state.servers, pinnedHostKeys: state.pinned },
         null,

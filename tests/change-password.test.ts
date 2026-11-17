@@ -65,12 +65,15 @@ describe('change master password', () => {
     await expect(store.unlock(OLD)).resolves.toBeTruthy()
   })
 
-  it('rejects a new password shorter than 10 characters', async () => {
+  it('rejects a new password below the floor, but accepts a weak one at or above it', async () => {
     const { store } = await seeded()
-    await expect(store.changeMasterPassword(OLD, 'short')).rejects.toThrow(/at least 10/)
-    // vault unchanged
+    // Below MASTER_PASSWORD_FLOOR (4): rejected, vault untouched.
+    await expect(store.changeMasterPassword(OLD, 'abc')).rejects.toThrow(/at least 4/)
+    // At the floor: weak (advisory rules unchecked in the UI) but accepted —
+    // the whole point of the explicit weak-password override.
+    await store.changeMasterPassword(OLD, '1234')
     store.lock()
-    await expect(store.unlock(OLD)).resolves.toBeTruthy()
+    await expect(store.unlock('1234')).resolves.toBeTruthy()
   })
 
   it('drops a Windows Hello enrollment (it wraps the old key)', async () => {

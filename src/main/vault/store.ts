@@ -13,7 +13,7 @@ import {
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ServerEntry, ServerUpsertInput, VaultBackupInfo, VaultPayload, VaultSettings } from '@shared/types'
-import { normalizeTags } from '@shared/schemas'
+import { MASTER_PASSWORD_FLOOR, normalizeTags } from '@shared/schemas'
 import {
   DEFAULT_KDF,
   VaultDecryptError,
@@ -214,8 +214,10 @@ export class VaultStore {
    */
   async changeMasterPassword(currentPassword: string, nextPassword: string): Promise<void> {
     if (!this.payload || !this.key || !this.header) throw new VaultLockedError()
-    if (nextPassword.length < 10) {
-      throw new Error('invalid-input:the new password must be at least 10 characters')
+    if (nextPassword.length < MASTER_PASSWORD_FLOOR) {
+      throw new Error(
+        `invalid-input:the new password must be at least ${MASTER_PASSWORD_FLOOR} characters`
+      )
     }
     // Verify against the live key material: wrong current password → reject
     // before touching anything on disk.

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Fingerprint, KeyRound, ShieldCheck, TerminalSquare } from 'lucide-react'
-import { masterPasswordIssues } from '@shared/schemas'
-import { Button, Field, PasswordInput } from '../../components/ui'
+import { MASTER_PASSWORD_FLOOR, masterPasswordIssues } from '@shared/schemas'
+import { Button, Checkbox, Field, PasswordInput } from '../../components/ui'
 import { friendlyError } from '../../lib/errors'
 import { useVault } from '../../stores/vault'
 import { VaultTools } from './VaultTools'
@@ -157,7 +157,11 @@ function SetupCard() {
 
   const issues = useMemo(() => masterPasswordIssues(password), [password])
   const confirmed = password && confirm && password === confirm
-  const canSubmit = password && confirmed && issues.length === 0
+  // Below the floor the acknowledgement checkbox is not even offered — the
+  // floor is the one rule that can never be opted out of.
+  const belowFloor = password.length < MASTER_PASSWORD_FLOOR
+  const [allowWeak, setAllowWeak] = useState(false)
+  const canSubmit = password && confirmed && (issues.length === 0 || (allowWeak && !belowFloor))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -214,6 +218,29 @@ function SetupCard() {
             )}
           </div>
         </div>
+
+        {/* Advisory rules may be consciously overridden — the checkbox is the
+            explicit acknowledgement that makes the submit button available. */}
+        {password && issues.length > 0 && !belowFloor && (
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-danger">
+            <Checkbox
+              checked={allowWeak}
+              onCheckedChange={setAllowWeak}
+              size="compact"
+              aria-label="Allow weak password"
+              className="mt-0.5"
+            />
+            <span>
+              This password is easy to guess. I understand the risk and want to use it anyway.
+            </span>
+          </label>
+        )}
+        {password && belowFloor && (
+          <p className="text-[12px] text-danger">
+            A password needs at least {MASTER_PASSWORD_FLOOR} characters — shorter is never
+            accepted, even with the override.
+          </p>
+        )}
 
         <Field
           label="Confirm password"

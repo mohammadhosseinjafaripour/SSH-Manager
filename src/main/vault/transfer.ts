@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import type { HostKeyPin, ImportSummary, ServerEntry, ServerUpsertInput } from '@shared/types'
-import { normalizeTags } from '@shared/schemas'
+import { MASTER_PASSWORD_FLOOR, normalizeTags } from '@shared/schemas'
 import {
   VaultDecryptError,
   deriveKey,
@@ -14,7 +14,6 @@ import {
 import { UnlockFailedError, type VaultStore } from './store'
 
 export const EXPORT_APP_ID = 'ssh-vault-export'
-export const MIN_EXPORT_PASSWORD = 10
 
 /**
  * Encrypted export document: same envelope as the vault itself (Argon2id +
@@ -37,8 +36,10 @@ export async function exportEncrypted(
   includePinnedHostKeys: boolean,
   exportPassword: string
 ): Promise<string> {
-  if (exportPassword.length < MIN_EXPORT_PASSWORD) {
-    throw new Error(`invalid-input:export password must be at least ${MIN_EXPORT_PASSWORD} characters`)
+  if (exportPassword.length < MASTER_PASSWORD_FLOOR) {
+    throw new Error(
+      `invalid-input:export password must be at least ${MASTER_PASSWORD_FLOOR} characters`
+    )
   }
   const header = newHeader()
   const salt = Buffer.from(header.kdf.saltB64, 'base64')

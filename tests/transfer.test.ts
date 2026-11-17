@@ -109,11 +109,16 @@ describe('encrypted export / import', () => {
     await expect(openEncryptedExport(raw, 'WrongPassword99')).rejects.toBeInstanceOf(UnlockFailedError)
   })
 
-  it('rejects short export passwords', async () => {
+  it('rejects export passwords below the floor, accepts weak ones at it', async () => {
     const source = await seededStore()
-    await expect(exportEncrypted(source.getPayload().servers, [], false, 'short')).rejects.toThrow(
+    // Below MASTER_PASSWORD_FLOOR (4): hard-rejected.
+    await expect(exportEncrypted(source.getPayload().servers, [], false, 'abc')).rejects.toThrow(
       'invalid-input'
     )
+    // At the floor: weak but allowed (the UI's explicit override maps to no
+    // extra main-process rule).
+    const raw = await exportEncrypted(source.getPayload().servers, [], false, '1234')
+    await expect(openEncryptedExport(raw, '1234')).resolves.toBeTruthy()
   })
 
   it('a random file that is not an export is rejected', async () => {

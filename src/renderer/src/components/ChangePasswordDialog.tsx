@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, KeyRound, ShieldCheck } from 'lucide-react'
-import { masterPasswordIssues } from '@shared/schemas'
-import { Button, Dialog, Field, PasswordInput } from './ui'
+import { MASTER_PASSWORD_FLOOR, masterPasswordIssues } from '@shared/schemas'
+import { Button, Checkbox, Dialog, Field, PasswordInput } from './ui'
 import { friendlyError } from '../lib/errors'
 
 /**
@@ -34,13 +34,22 @@ export function ChangePasswordDialog({
   const issues = useMemo(() => masterPasswordIssues(next), [next])
   const sameAsCurrent = next.length > 0 && next === current
   const mismatch = confirm.length > 0 && next !== confirm
+  // The strength rules are advisory: an explicit acknowledgement allows a
+  // weak password down to the shared floor (below it nothing is accepted).
+  const belowFloor = next.length < MASTER_PASSWORD_FLOOR
+  const [allowWeak, setAllowWeak] = useState(false)
   const canSubmit =
-    current.length > 0 && next.length > 0 && issues.length === 0 && !sameAsCurrent && !mismatch
+    current.length > 0 &&
+    next.length > 0 &&
+    (issues.length === 0 || (allowWeak && !belowFloor)) &&
+    !sameAsCurrent &&
+    !mismatch
 
   const reset = () => {
     setCurrent('')
     setNext('')
     setConfirm('')
+    setAllowWeak(false)
     setError(null)
     setDone(false)
     setBusy(false)
@@ -110,7 +119,7 @@ export function ChangePasswordDialog({
             <PasswordInput
               value={next}
               onChange={setNext}
-              placeholder="At least 10 characters"
+              placeholder={`Minimum ${MASTER_PASSWORD_FLOOR} characters — 10+ recommended`}
               autoComplete="new-password"
               invalid={sameAsCurrent}
             />
@@ -147,6 +156,27 @@ export function ChangePasswordDialog({
               </p>
             )}
           </div>
+
+          {/* Advisory rules may be consciously overridden — the checkbox is
+              the explicit acknowledgement that unlocks the submit button. */}
+          {next && issues.length > 0 && !belowFloor && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-danger">
+              <Checkbox
+                checked={allowWeak}
+                onCheckedChange={setAllowWeak}
+                size="compact"
+                aria-label="Allow weak password"
+                className="mt-0.5"
+              />
+              <span>This password is easy to guess. I understand the risk and want it anyway.</span>
+            </label>
+          )}
+          {next && belowFloor && (
+            <p className="text-[12px] text-danger">
+              A password needs at least {MASTER_PASSWORD_FLOOR} characters — shorter is never
+              accepted, even with the override.
+            </p>
+          )}
 
           <Field
             label="Confirm new password"

@@ -7,7 +7,7 @@ import {
   FileSpreadsheet,
   FolderOpen
 } from 'lucide-react'
-import { masterPasswordIssues } from '@shared/schemas'
+import { MASTER_PASSWORD_FLOOR, masterPasswordIssues } from '@shared/schemas'
 import type { ImportPickResult, ImportSummary } from '@shared/types'
 import { Button, Checkbox, Dialog, Field, PasswordInput, Spinner, Switch } from './ui'
 import { friendlyError } from '../lib/errors'
@@ -49,7 +49,12 @@ function ExportPanel() {
   const [savedTo, setSavedTo] = useState<string | null>(null)
 
   const issues = masterPasswordIssues(password)
-  const canExport = password && password === confirm && issues.length === 0
+  // Same advisory rules + explicit override as the master password: the only
+  // non-negotiable part is the shared floor.
+  const [allowWeak, setAllowWeak] = useState(false)
+  const belowFloor = password.length < MASTER_PASSWORD_FLOOR
+  const canExport =
+    password && password === confirm && (issues.length === 0 || (allowWeak && !belowFloor))
 
   const run = async () => {
     setBusy(true)
@@ -94,12 +99,34 @@ function ExportPanel() {
         <div className="mt-5 flex flex-col gap-4">
           <Field
             label="Export password"
-            hint={`At least 10 characters. You'll enter it on the new machine — don't lose it.`}
+            hint={`Minimum ${MASTER_PASSWORD_FLOOR} characters, 10+ recommended. You'll enter it on the new machine — don't lose it.`}
           >
             <PasswordInput value={password} onChange={setPassword} placeholder="Protects the export file" />
           </Field>
           {password && issues.length > 0 && (
             <p className="text-[12px] text-warn">{issues.join(' · ')}</p>
+          )}
+          {/* Advisory rules may be consciously overridden — the checkbox is
+              the explicit acknowledgement that unlocks the export button. */}
+          {password && issues.length > 0 && !belowFloor && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-danger">
+              <Checkbox
+                checked={allowWeak}
+                onCheckedChange={setAllowWeak}
+                size="compact"
+                aria-label="Allow weak export password"
+                className="mt-0.5"
+              />
+              <span>
+                This export password is easy to guess. I understand the risk and want it anyway.
+              </span>
+            </label>
+          )}
+          {password && belowFloor && (
+            <p className="text-[12px] text-danger">
+              A password needs at least {MASTER_PASSWORD_FLOOR} characters — shorter is never
+              accepted, even with the override.
+            </p>
           )}
           <Field
             label="Confirm password"
