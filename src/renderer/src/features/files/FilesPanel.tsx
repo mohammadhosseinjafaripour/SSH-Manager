@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Download,
   File as FileIcon,
@@ -70,6 +72,17 @@ export function FilesPanel({
   const [pendingUpload, setPendingUpload] = useState<{ localPaths: string[] } | null>(null)
   const [conflicts, setConflicts] = useState<string[]>([])
   const dragDepth = useRef(0)
+  // Directory history for the mouse back/forward side buttons (and the header
+  // arrows), like a file manager. Capped so an exploration spree can't grow
+  // the arrays forever.
+  const [past, setPast] = useState<string[]>([])
+  const [future, setFuture] = useState<string[]>([])
+  // The path bar edits a draft that only commits on Enter: typing must not
+  // push half-written paths into the history (nor fire a failed listing per
+  // keystroke). Stored as an override over the current path — shown as
+  // `?? cwd` below — so every navigation mutator resets it during render
+  // instead of an effect having to sync state.
+  const [pathDraft, setPathDraft] = useState<string | null>(null)
 
   // ---- connect + navigate --------------------------------------------------
 
@@ -164,6 +177,61 @@ export function FilesPanel({
       if (p.done) void refresh(cwd)
     })
   }, [cwd, refresh])
+
+  // Keep the path bar in sync with wherever navigation last landed: the
+  // draft override is dropped by every mutator below, so the input shows the
+  // committed path (cwd) until the user types again.
+  const dropPathDraft = () => setPathDraft(null)
+
+  /**
+   * Every directory jump goes through here so back/forward stays correct.
+   * Navigating to the path already shown is just a manual refresh.
+   */
+  const navigate = (dir: string) => {
+    dropPathDraft()
+    if (dir === cwd) {
+      void refresh(dir)
+      return
+    }
+    setPast((p) => [...p, cwd].slice(-100))
+    setFuture([])
+    setCwd(dir)
+  }
+
+  const goBack = () => {
+    if (past.length === 0) return
+    const target = past[past.length - 1]
+    dropPathDraft()
+    setPast((p) => p.slice(0, -1))
+    setFuture((f) => [cwd, ...f].slice(0, 100))
+    setCwd(target)
+  }
+
+  const goForward = () => {
+    if (future.length === 0) return
+    const target = future[0]
+    dropPathDraft()
+    setFuture((f) => f.slice(1))
+    setPast((p) => [...p, cwd].slice(-100))
+    setCwd(target)
+  }
+
+  // Mouse back/forward (XButton1/XButton2). mousedown drives the action so it
+  // feels instant; auxclick is prevented because Chromium's default action for
+  // the side buttons is browser-level history traversal, which this SPA has no
+  // use for.
+  const onMouseDownSideButtons = (e: React.MouseEvent) => {
+    if (e.button === 3) {
+      e.preventDefault()
+      goBack()
+    } else if (e.button === 4) {
+      e.preventDefault()
+      goForward()
+    }
+  }
+  const onAuxClickSideButtons = (e: React.MouseEvent) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault()
+  }
 
   // ---- operations ----------------------------------------------------------
 
@@ -373,18 +441,34 @@ export function FilesPanel({
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={onDragLeave}
       onDrop={(e) => void onDrop(e)}
+      onMouseDown={onMouseDownSideButtons}
+      onAuxClick={onAuxClickSideButtons}
     >
       {/* header */}
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line px-3">
         <FolderClosed size={15} className="shrink-0 text-accent" />
         <span className="mr-1 text-[13px] font-medium">Files</span>
         <div className="ml-auto flex items-center gap-0.5">
-          <IconButton label="Go to home directory" onClick={() => setCwd('/')} disabled={!connectionId}>
+          <IconButton
+            label="Back (mouse side button)"
+            onClick={goBack}
+            disabled={!connectionId || past.length === 0}
+          >
+            <ArrowLeft size={14} />
+          </IconButton>
+          <IconButton
+            label="Forward (mouse side button)"
+            onClick={goForward}
+            disabled={!connectionId || future.length === 0}
+          >
+            <ArrowRight size={14} />
+          </IconButton>
+          <IconButton label="Go to home directory" onClick={() => navigate('/')} disabled={!connectionId}>
             <Home size={14} />
           </IconButton>
           <IconButton
             label="Parent folder"
-            onClick={() => setCwd((d) => parentOf(d))}
+            onClick={() => navigate(parentOf(cwd))}
             disabled={!connectionId || cwd === '/'}
           >
             <ArrowUp size={14} />
@@ -406,10 +490,10 @@ export function FilesPanel({
       {/* path bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-2">
         <Input
-          value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
+          value={pathDraft ?? cwd}
+          onChange={(e) => setPathDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void refresh(cwd)
+            if (e.key === 'Enter') navigate(pathDraft?.trim() || cwd)
           }}
           spellCheck={false}
           aria-label="Remote path"
@@ -590,7 +674,7 @@ export function FilesPanel({
                       setSelected(new Set([entry.path]))
                     }}
                     onDoubleClick={() => {
-                      if (entry.kind === 'dir') setCwd(entry.path)
+                      if (entry.kind === 'dir') navigate(entry.path)
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault()
@@ -600,7 +684,7 @@ export function FilesPanel({
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        if (entry.kind === 'dir') setCwd(entry.path)
+                        if (entry.kind === 'dir') navigate(entry.path)
                         else toggle(entry.path)
                       }
                     }}
@@ -759,7 +843,7 @@ export function FilesPanel({
           selectionCount={selected.size}
           onClose={() => setMenu(null)}
           onOpen={() => {
-            if (menu.entry.kind === 'dir') setCwd(menu.entry.path)
+            if (menu.entry.kind === 'dir') navigate(menu.entry.path)
             setMenu(null)
           }}
           onRename={() => {
